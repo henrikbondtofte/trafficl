@@ -48,16 +48,20 @@ export default function CompetitorAnalysis() {
       setCurrentStep(3);
       await new Promise(resolve => setTimeout(resolve, 2500));
       
-      // Step 4: Content & DOM Analysis
+      // Step 4: Crawlability & Renderability Analysis
       setCurrentStep(4);
+      await new Promise(resolve => setTimeout(resolve, 2500));
+      
+      // Step 5: Content & DOM Analysis
+      setCurrentStep(5);
       await new Promise(resolve => setTimeout(resolve, 2000));
       
-      // Step 5: Performance & Loading Analysis
-      setCurrentStep(5);
+      // Step 6: Performance & Loading Analysis
+      setCurrentStep(6);
       await new Promise(resolve => setTimeout(resolve, 1500));
       
-      // Step 6: Generate Rankings & Insights
-      setCurrentStep(6);
+      // Step 7: Generate Rankings & Insights
+      setCurrentStep(7);
       await new Promise(resolve => setTimeout(resolve, 1500));
       
       // Mock results
@@ -82,113 +86,275 @@ export default function CompetitorAnalysis() {
       : [yourSite, ...winners.filter(w => w), ...losers.filter(l => l)];
     
     return {
-      sites: sites.map((url, index) => ({
-        url,
-        name: index === 0 ? 'Your Site' : `Competitor ${index}`,
-        coreWebVitals: {
-          lcp: Math.random() * 3 + 1,
-          fid: Math.random() * 200,
-          cls: Math.random() * 0.3,
-          score: Math.floor(Math.random() * 40) + 60,
-          mobileScore: Math.floor(Math.random() * 40) + 60
-        },
-        lighthouse: {
-          performance: Math.floor(Math.random() * 40) + 60,
-          accessibility: Math.floor(Math.random() * 30) + 70,
-          bestPractices: Math.floor(Math.random() * 30) + 70,
-          seo: Math.floor(Math.random() * 30) + 70,
-          overallScore: Math.floor(Math.random() * 40) + 60
-        },
-        content: {
-          wordCount: Math.floor(Math.random() * 2000) + 500,
-          readabilityScore: Math.floor(Math.random() * 30) + 70,
-          headingStructure: Math.floor(Math.random() * 20) + 80,
-          paragraphs: Math.floor(Math.random() * 30) + 10
-        },
-        technical: {
-          h1Count: Math.floor(Math.random() * 3) + 1,
-          h2Count: Math.floor(Math.random() * 10) + 3,
-          h3Count: Math.floor(Math.random() * 15) + 5,
-          metaDescription: Math.random() > 0.3,
-          imageOptimization: Math.floor(Math.random() * 30) + 70,
-          internalLinks: Math.floor(Math.random() * 50) + 20,
-          externalLinks: Math.floor(Math.random() * 20) + 5,
-          schemaMarkup: Math.random() > 0.4,
-          sitemap: Math.random() > 0.2,
-          robotsTxt: Math.random() > 0.2
-        },
-        security: {
-          httpsEnabled: Math.random() > 0.1,
-          securityHeaders: Math.floor(Math.random() * 3) + 2,
-          mixedContent: Math.random() > 0.7
-        },
-        loading: {
-          totalRequests: Math.floor(Math.random() * 100) + 50,
-          totalSize: Math.floor(Math.random() * 3000) + 1000, // KB
-          jsSize: Math.floor(Math.random() * 800) + 200,
-          cssSize: Math.floor(Math.random() * 200) + 50,
-          imageSize: Math.floor(Math.random() * 2000) + 500
-        }
-      })),
+      sites: sites.map((url, index) => {
+        // Create more realistic mock data with correlations
+        const isWinner = analysisMode === 'winnersLosers' && index <= 3 && index > 0;
+        const isLoser = analysisMode === 'winnersLosers' && index > 3;
+        const isYourSite = index === 0;
+        
+        // Base performance affects other metrics
+        const basePerformance = isWinner ? 
+          Math.floor(Math.random() * 20) + 80 : 
+          isLoser ? 
+            Math.floor(Math.random() * 30) + 40 : 
+            Math.floor(Math.random() * 40) + 60;
+        
+        // Crawlability - winners have better crawlability
+        const canCrawl = isWinner ? 
+          Math.random() > 0.05 : 
+          isLoser ? 
+            Math.random() > 0.4 : 
+            Math.random() > 0.2;
+        
+        const crawlErrors = canCrawl ? 
+          Math.floor(Math.random() * 3) : 
+          Math.floor(Math.random() * 8) + 2;
+        
+        const crawlabilityScore = calculateCrawlabilityScore(canCrawl, crawlErrors, Math.floor(Math.random() * 40) + 60);
+        
+        // Renderability - correlated with crawlability
+        const canRender = canCrawl ? 
+          Math.random() > 0.1 : 
+          Math.random() > 0.5;
+        
+        const jsErrors = canRender ? 
+          Math.floor(Math.random() * 3) : 
+          Math.floor(Math.random() * 10) + 3;
+        
+        const renderScore = canRender ? 
+          Math.floor(Math.random() * 20) + 80 : 
+          Math.floor(Math.random() * 30) + 40;
+        
+        const renderabilityScore = calculateRenderabilityScore(canRender, renderScore, jsErrors);
+        
+        // Technical SEO - larger sites more likely to have schema
+        const hasSchema = basePerformance > 75 ? 
+          Math.random() > 0.2 : 
+          Math.random() > 0.6;
+        
+        const lighthouse = {
+          performance: basePerformance,
+          accessibility: Math.floor(Math.random() * 20) + (basePerformance - 10),
+          bestPractices: Math.floor(Math.random() * 15) + (basePerformance - 5),
+          seo: Math.floor(Math.random() * 20) + (basePerformance - 10),
+        };
+        
+        // Calculate overall score using weighted formula
+        const overallScore = calculateOverallScore(
+          lighthouse,
+          crawlabilityScore,
+          renderabilityScore,
+          hasSchema
+        );
+        
+        return {
+          url,
+          name: index === 0 ? 'Your Site' : 
+                isWinner ? `Winner ${index}` : 
+                isLoser ? `Loser ${index - 3}` : 
+                `Competitor ${index}`,
+          coreWebVitals: {
+            lcp: basePerformance > 80 ? Math.random() * 1.5 + 1 : Math.random() * 2 + 2,
+            fid: basePerformance > 80 ? Math.random() * 100 : Math.random() * 200 + 100,
+            cls: basePerformance > 80 ? Math.random() * 0.1 : Math.random() * 0.3 + 0.1,
+            score: basePerformance,
+            mobileScore: Math.floor(basePerformance * 0.9) + Math.floor(Math.random() * 10)
+          },
+          lighthouse: {
+            ...lighthouse,
+            overallScore: Math.round(overallScore)
+          },
+          // Crawlability Analysis
+          crawlability: {
+            canCrawl,
+            crawlErrors,
+            blockedResources: canCrawl ? Math.floor(Math.random() * 5) : Math.floor(Math.random() * 15) + 5,
+            robotsTxtIssues: Math.random() > 0.8,
+            crawlDepth: Math.floor(Math.random() * 5) + 3,
+            indexablePages: canCrawl ? Math.floor(Math.random() * 30) + 70 : Math.floor(Math.random() * 50) + 20,
+            score: crawlabilityScore
+          },
+          renderability: {
+            canRender,
+            jsErrors,
+            domIssues: canRender ? Math.floor(Math.random() * 5) : Math.floor(Math.random() * 15) + 5,
+            criticalResourceErrors: canRender ? Math.floor(Math.random() * 1) : Math.floor(Math.random() * 5) + 1,
+            renderScore,
+            hydrationIssues: Math.random() > 0.85,
+            score: renderabilityScore
+          },
+          domAnalysis: {
+            totalElements: Math.floor(Math.random() * 2000) + 500,
+            domDepth: basePerformance > 80 ? Math.floor(Math.random() * 4) + 8 : Math.floor(Math.random() * 8) + 10,
+            domSize: basePerformance > 80 ? Math.floor(Math.random() * 200) + 100 : Math.floor(Math.random() * 400) + 200,
+            duplicateIds: basePerformance > 80 ? Math.floor(Math.random() * 2) : Math.floor(Math.random() * 5) + 1,
+            invalidMarkup: basePerformance > 80 ? Math.floor(Math.random() * 3) : Math.floor(Math.random() * 10) + 3,
+            semanticScore: basePerformance > 80 ? Math.floor(Math.random() * 20) + 80 : Math.floor(Math.random() * 30) + 50
+          },
+          content: {
+            wordCount: isWinner ? Math.floor(Math.random() * 1500) + 1500 : Math.floor(Math.random() * 1000) + 500,
+            readabilityScore: Math.floor(Math.random() * 20) + (basePerformance - 10),
+            headingStructure: Math.floor(Math.random() * 15) + (basePerformance - 5),
+            paragraphs: Math.floor(Math.random() * 20) + 10
+          },
+          technical: {
+            h1Count: Math.floor(Math.random() * 2) + 1,
+            h2Count: Math.floor(Math.random() * 8) + 3,
+            h3Count: Math.floor(Math.random() * 12) + 5,
+            metaDescription: basePerformance > 70 ? Math.random() > 0.2 : Math.random() > 0.6,
+            imageOptimization: basePerformance,
+            internalLinks: Math.floor(Math.random() * 40) + 20,
+            externalLinks: Math.floor(Math.random() * 15) + 5,
+            schemaMarkup: hasSchema,
+            sitemap: basePerformance > 70 ? Math.random() > 0.1 : Math.random() > 0.4,
+            robotsTxt: basePerformance > 70 ? Math.random() > 0.1 : Math.random() > 0.3
+          },
+          security: {
+            httpsEnabled: basePerformance > 60 ? Math.random() > 0.05 : Math.random() > 0.3,
+            securityHeaders: basePerformance > 80 ? Math.floor(Math.random() * 2) + 3 : Math.floor(Math.random() * 3) + 1,
+            mixedContent: Math.random() > 0.8
+          },
+          loading: {
+            totalRequests: basePerformance > 80 ? Math.floor(Math.random() * 50) + 50 : Math.floor(Math.random() * 80) + 70,
+            totalSize: basePerformance > 80 ? Math.floor(Math.random() * 1000) + 1000 : Math.floor(Math.random() * 2000) + 1500,
+            jsSize: basePerformance > 80 ? Math.floor(Math.random() * 300) + 200 : Math.floor(Math.random() * 600) + 400,
+            cssSize: Math.floor(Math.random() * 150) + 50,
+            imageSize: basePerformance > 80 ? Math.floor(Math.random() * 800) + 500 : Math.floor(Math.random() * 1500) + 1000
+          }
+        };
+      }),
       insights: generateInsights()
     };
+  };
+
+  // Calculate crawlability score (0-100)
+  const calculateCrawlabilityScore = (canCrawl, crawlErrors, indexablePages) => {
+    let score = 0;
+    
+    // Base score for being crawlable
+    if (canCrawl) score += 50;
+    
+    // Subtract for errors
+    score -= crawlErrors * 8;
+    
+    // Add percentage of indexable pages
+    score += indexablePages * 0.5;
+    
+    return Math.max(0, Math.min(100, score));
+  };
+
+  // Calculate renderability score (0-100)
+  const calculateRenderabilityScore = (canRender, renderScore, jsErrors) => {
+    let score = 0;
+    
+    // Base score for being renderable
+    if (canRender) score += 40;
+    
+    // Add render quality
+    score += renderScore * 0.6;
+    
+    // Subtract for JS errors
+    score -= jsErrors * 5;
+    
+    return Math.max(0, Math.min(100, score));
+  };
+
+  // Calculate overall score using weighted formula
+  const calculateOverallScore = (lighthouse, crawlabilityScore, renderabilityScore, hasSchema) => {
+    const weights = {
+      crawlability: 0.35,      // 35% - MEGA important!
+      renderability: 0.25,     // 25% - Very important!
+      performance: 0.15,       // 15% - Core Web Vitals
+      seo: 0.12,              // 12% - Lighthouse SEO
+      accessibility: 0.08,     // 8% - Accessibility
+      technical: 0.05          // 5% - Technical SEO (schema, etc.)
+    };
+    
+    const technicalScore = (hasSchema ? 80 : 40) + (lighthouse.bestPractices * 0.2);
+    
+    const weightedScore = 
+      (crawlabilityScore * weights.crawlability) +
+      (renderabilityScore * weights.renderability) +
+      (lighthouse.performance * weights.performance) +
+      (lighthouse.seo * weights.seo) +
+      (lighthouse.accessibility * weights.accessibility) +
+      (technicalScore * weights.technical);
+    
+    return Math.max(0, Math.min(100, weightedScore));
   };
 
   const generateInsights = () => [
     {
       type: 'critical',
-      title: '🚨 Core Web Vitals Gap',
-      description: 'Competitor A has 23% better LCP than your site',
-      recommendation: 'Optimize images and reduce server response time',
+      title: '🕷️ MAJOR Crawlability Advantage Detected!',
+      description: 'Competitor B has critical crawl errors (35% of total score impact!) - this is a huge opportunity',
+      recommendation: 'Target keywords where they rank - your superior crawlability gives you 20-40% ranking advantage',
       impact: 'High',
-      metric: 'LCP'
+      metric: 'Crawlability'
+    },
+    {
+      type: 'critical',
+      title: '🖥️ Competitor Render Failure = Your Opportunity',
+      description: 'Competitor C has JavaScript rendering problems (25% of total score impact!) - Google may not see their content',
+      recommendation: 'Create content targeting their keywords - their render issues make them vulnerable',
+      impact: 'High',
+      metric: 'Renderability'
+    },
+    {
+      type: 'warning',
+      title: '🚨 Your Crawlability Score Needs Attention',
+      description: 'Your crawlability score is below competitor average - this affects 35% of your overall SEO score',
+      recommendation: 'Fix crawl errors immediately - this is your biggest SEO lever for improvement',
+      impact: 'High',
+      metric: 'Crawlability'
+    },
+    {
+      type: 'opportunity',
+      title: '💡 Schema Markup Competitive Gap',
+      description: 'You have schema markup while 60% of competitors don\'t - leverage this technical advantage',
+      recommendation: 'Expand schema implementation to more page types for maximum competitive advantage',
+      impact: 'Medium',
+      metric: 'Schema'
     },
     {
       type: 'warning',
       title: '⚠️ Content Length Disadvantage',
-      description: 'Your content is 40% shorter than top competitors',
-      recommendation: 'Expand content depth while maintaining quality',
-      impact: 'High',
+      description: 'Your content is 40% shorter than top competitors - but they have technical issues',
+      recommendation: 'Expand content depth while maintaining your technical SEO advantages',
+      impact: 'Medium',
       metric: 'Content'
     },
     {
-      type: 'critical',
-      title: '🔍 Technical SEO Gap',
-      description: 'Missing schema markup while 80% of competitors use it',
-      recommendation: 'Implement structured data for better search visibility',
-      impact: 'High',
-      metric: 'Schema'
-    },
-    {
       type: 'opportunity',
-      title: '💡 Lighthouse Performance Win',
-      description: 'You outperform 60% of competitors in accessibility',
-      recommendation: 'Leverage this strength in your SEO strategy',
+      title: '🏆 DOM Structure Competitive Edge',
+      description: 'Your DOM depth is optimal while competitors have bloated structures affecting Core Web Vitals',
+      recommendation: 'Highlight your technical efficiency - target their slow-loading pages',
       impact: 'Medium',
-      metric: 'Accessibility'
+      metric: 'DOM'
     },
     {
       type: 'warning',
-      title: '🖼️ Image Optimization Issue',
-      description: 'Competitors have 35% smaller image sizes on average',
-      recommendation: 'Implement WebP format and proper compression',
+      title: '🖼️ Image Optimization Opportunity',
+      description: 'Competitors have 35% smaller image sizes - affecting your Core Web Vitals score (15% of total)',
+      recommendation: 'Implement WebP format and aggressive compression to match competitor performance',
       impact: 'Medium',
       metric: 'Images'
     },
     {
       type: 'opportunity',
-      title: '🔗 Internal Linking Opportunity', 
-      description: 'You have fewer internal links than successful competitors',
-      recommendation: 'Increase internal linking to boost page authority',
-      impact: 'Medium',
-      metric: 'Links'
+      title: '🎯 Technical SEO Dominance Strategy',
+      description: 'You outperform in crawlability and renderability - the two most important factors (60% of score)',
+      recommendation: 'Focus content strategy on competitor\'s technical weaknesses for maximum ROI',
+      impact: 'High',
+      metric: 'Strategy'
     }
   ];
 
   const generateRankings = (resultsData) => {
     const metrics = [
       'overallScore', 'performance', 'contentLength', 'imageOptimization', 
-      'internalLinks', 'accessibility', 'loadingSpeed', 'securityScore'
+      'internalLinks', 'accessibility', 'loadingSpeed', 'securityScore',
+      'crawlability', 'renderability', 'domQuality'
     ];
     
     return metrics.reduce((rankings, metric) => {
@@ -210,6 +376,9 @@ export default function CompetitorAnalysis() {
       case 'accessibility': return site.lighthouse?.accessibility || 0;
       case 'loadingSpeed': return 100 - (site.loading?.totalSize || 1000) / 50; // Inverse for speed
       case 'securityScore': return (site.security?.httpsEnabled ? 50 : 0) + (site.security?.securityHeaders * 10);
+      case 'crawlability': return site.crawlability?.score || 0;
+      case 'renderability': return site.renderability?.score || 0;
+      case 'domQuality': return (site.domAnalysis?.semanticScore || 0) + (20 - site.domAnalysis?.domDepth) + (10 - site.domAnalysis?.duplicateIds * 2);
       default: return 0;
     }
   };
@@ -404,12 +573,13 @@ export default function CompetitorAnalysis() {
           
           <div className="space-y-4">
             {[
-              { step: 1, title: 'Validating URLs', emoji: '🔗' },
+              { step: 1, title: 'Validating URLs & Initial Scan', emoji: '🔗' },
               { step: 2, title: 'Analyzing Core Web Vitals', emoji: '⚡' },
-              { step: 3, title: 'Running Lighthouse Analysis', emoji: '🔍' },
-              { step: 4, title: 'Scanning Content & DOM Structure', emoji: '🏗️' },
-              { step: 5, title: 'Measuring Performance & Loading', emoji: '🚀' },
-              { step: 6, title: 'Generating Rankings & Insights', emoji: '💡' }
+              { step: 3, title: 'Running Full Lighthouse Analysis', emoji: '🔍' },
+              { step: 4, title: 'Testing Crawlability & Renderability', emoji: '🕷️' },
+              { step: 5, title: 'Scanning Content & DOM Structure', emoji: '🏗️' },
+              { step: 6, title: 'Measuring Performance & Loading', emoji: '🚀' },
+              { step: 7, title: 'Generating Rankings & Competitive Insights', emoji: '💡' }
             ].map(({ step, title, emoji }) => (
               <div key={step} className="flex items-center space-x-4">
                 <div className={`w-8 h-8 rounded-full flex items-center justify-center ${
@@ -430,14 +600,21 @@ export default function CompetitorAnalysis() {
       {/* Results */}
       {results && (
         <div className="space-y-8">
-          {/* Executive Summary */}
+          {/* Executive Summary with Scoring Explanation */}
           <div className="bg-gradient-to-r from-blue-900/50 to-purple-900/50 rounded-2xl p-8">
-            <h3 className="text-2xl font-bold text-white mb-6">📋 Executive Summary</h3>
+            <div className="flex justify-between items-center mb-6">
+              <h3 className="text-2xl font-bold text-white">📋 Executive Summary</h3>
+              <div className="text-sm text-gray-300 bg-gray-800/50 rounded-lg p-3">
+                <strong>Scoring Formula:</strong> Crawlability (35%) + Renderability (25%) + Performance (15%) + SEO (12%) + Accessibility (8%) + Technical (5%)
+              </div>
+            </div>
             
             <div className="grid md:grid-cols-4 gap-6">
               {results.sites.map((site, index) => {
                 const overallRank = results.rankings?.overallScore?.find(r => r.originalIndex === index)?.rank || index + 1;
                 const isYourSite = index === 0;
+                const crawlScore = site.crawlability?.score || 0;
+                const renderScore = site.renderability?.score || 0;
                 
                 return (
                   <div key={index} className={`p-4 rounded-lg border-2 ${
@@ -461,10 +638,51 @@ export default function CompetitorAnalysis() {
                         {site.lighthouse.overallScore}/100
                       </span>
                     </div>
+                    
+                    {/* Key Scores Breakdown */}
+                    <div className="grid grid-cols-2 gap-2 text-xs mb-3">
+                      <div>
+                        <span className="text-gray-400">Crawl:</span>
+                        <span className={`ml-1 font-medium ${getScoreColor(crawlScore)}`}>
+                          {Math.round(crawlScore)}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-gray-400">Render:</span>
+                        <span className={`ml-1 font-medium ${getScoreColor(renderScore)}`}>
+                          {Math.round(renderScore)}
+                        </span>
+                      </div>
+                    </div>
+                    
                     <div className="text-xs text-gray-400 truncate">{site.url}</div>
+                    
+                    {/* Critical Issues Alert */}
+                    {(!site.crawlability.canCrawl || !site.renderability.canRender) && (
+                      <div className="mt-2 text-xs text-red-300 bg-red-900/30 p-2 rounded">
+                        🚨 Critical SEO Issues Detected!
+                      </div>
+                    )}
                   </div>
                 );
               })}
+            </div>
+            
+            {/* Scoring Methodology */}
+            <div className="mt-6 bg-gray-800/30 rounded-lg p-4">
+              <h4 className="text-sm font-semibold text-gray-300 mb-2">📊 Why This Scoring System?</h4>
+              <div className="grid md:grid-cols-2 gap-4 text-xs text-gray-400">
+                <div>
+                  <strong className="text-red-400">🕷️ Crawlability (35%)</strong> - If Google can't crawl your site, rankings drop 20-40%
+                  <br />
+                  <strong className="text-purple-400">🖥️ Renderability (25%)</strong> - JavaScript issues = invisible content to Google
+                </div>
+                <div>
+                  <strong className="text-yellow-400">⚡ Performance (15%)</strong> - Core Web Vitals impact rankings
+                  <br />
+                  <strong className="text-blue-400">🔍 SEO + Accessibility + Technical (25%)</strong> - Traditional SEO factors
+                </div>
+              </div>
             </div>
           </div>
 
@@ -540,7 +758,227 @@ export default function CompetitorAnalysis() {
             </div>
           </div>
 
-          {/* Lighthouse Scores Comparison */}
+          {/* NEW: Crawlability & Renderability Analysis */}
+          <div className="bg-gradient-to-r from-red-900/30 to-orange-900/30 rounded-2xl p-8">
+            <h3 className="text-2xl font-bold text-white mb-6">🕷️ Crawlability & Renderability Analysis</h3>
+            <div className="bg-yellow-900/20 border border-yellow-600 rounded-lg p-4 mb-6">
+              <p className="text-yellow-300 text-sm">
+                🎯 <strong>Critical Competitive Advantage:</strong> Sites that can't be crawled or rendered properly by Google lose rankings dramatically!
+              </p>
+            </div>
+            
+            <div className="grid md:grid-cols-2 gap-8">
+              {/* Crawlability Analysis */}
+              <div>
+                <h4 className="text-lg font-semibold text-green-400 mb-4">🕷️ Google Crawlability</h4>
+                <div className="space-y-4">
+                  {results.sites.map((site, index) => {
+                    const crawlRank = results.rankings?.crawlability?.find(r => r.originalIndex === index)?.rank || index + 1;
+                    const isYourSite = index === 0;
+                    const canCrawl = site.crawlability.canCrawl;
+                    
+                    return (
+                      <div key={index} className={`p-4 rounded-lg border-2 ${
+                        !canCrawl ? 'border-red-500 bg-red-900/30' :
+                        crawlRank === 1 ? 'border-green-500 bg-green-900/20' :
+                        isYourSite ? 'border-blue-500 bg-blue-900/20' : 'border-gray-600 bg-gray-700'
+                      }`}>
+                        <div className="flex justify-between items-start mb-3">
+                          <span className={`font-medium ${isYourSite ? 'text-blue-400' : 'text-white'}`}>
+                            {site.name}
+                          </span>
+                          <div className="flex items-center space-x-2">
+                            <span className={`text-sm ${getRankColor(crawlRank, results.sites.length)}`}>
+                              {getRankBadge(crawlRank, results.sites.length)} #{crawlRank}
+                            </span>
+                            <span className={`text-lg ${canCrawl ? 'text-green-400' : 'text-red-400'}`}>
+                              {canCrawl ? '✅' : '❌'}
+                            </span>
+                          </div>
+                        </div>
+                        
+                        <div className="grid grid-cols-3 gap-3 text-xs">
+                          <div>
+                            <span className="text-gray-400">Crawl Errors:</span>
+                            <span className={`ml-1 font-medium ${site.crawlability.crawlErrors > 2 ? 'text-red-400' : 'text-green-400'}`}>
+                              {site.crawlability.crawlErrors}
+                            </span>
+                          </div>
+                          <div>
+                            <span className="text-gray-400">Blocked:</span>
+                            <span className={`ml-1 font-medium ${site.crawlability.blockedResources > 5 ? 'text-red-400' : 'text-green-400'}`}>
+                              {site.crawlability.blockedResources}
+                            </span>
+                          </div>
+                          <div>
+                            <span className="text-gray-400">Indexable:</span>
+                            <span className="text-white ml-1 font-medium">{site.crawlability.indexablePages}%</span>
+                          </div>
+                        </div>
+                        
+                        {!canCrawl && (
+                          <div className="mt-2 text-xs text-red-300 bg-red-900/30 p-2 rounded">
+                            ⚠️ <strong>CRITICAL:</strong> This site has major crawlability issues!
+                          </div>
+                        )}
+                        {site.crawlability.robotsTxtIssues && (
+                          <div className="mt-2 text-xs text-yellow-300 bg-yellow-900/30 p-2 rounded">
+                            ⚠️ Robots.txt blocking important pages
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Renderability Analysis */}
+              <div>
+                <h4 className="text-lg font-semibold text-purple-400 mb-4">🖥️ Page Renderability</h4>
+                <div className="space-y-4">
+                  {results.sites.map((site, index) => {
+                    const renderRank = results.rankings?.renderability?.find(r => r.originalIndex === index)?.rank || index + 1;
+                    const isYourSite = index === 0;
+                    const canRender = site.renderability.canRender;
+                    
+                    return (
+                      <div key={index} className={`p-4 rounded-lg border-2 ${
+                        !canRender ? 'border-red-500 bg-red-900/30' :
+                        renderRank === 1 ? 'border-green-500 bg-green-900/20' :
+                        isYourSite ? 'border-blue-500 bg-blue-900/20' : 'border-gray-600 bg-gray-700'
+                      }`}>
+                        <div className="flex justify-between items-start mb-3">
+                          <span className={`font-medium ${isYourSite ? 'text-blue-400' : 'text-white'}`}>
+                            {site.name}
+                          </span>
+                          <div className="flex items-center space-x-2">
+                            <span className={`text-sm ${getRankColor(renderRank, results.sites.length)}`}>
+                              {getRankBadge(renderRank, results.sites.length)} #{renderRank}
+                            </span>
+                            <span className={`text-lg ${canRender ? 'text-green-400' : 'text-red-400'}`}>
+                              {canRender ? '✅' : '❌'}
+                            </span>
+                          </div>
+                        </div>
+                        
+                        <div className="grid grid-cols-3 gap-3 text-xs mb-2">
+                          <div>
+                            <span className="text-gray-400">JS Errors:</span>
+                            <span className={`ml-1 font-medium ${site.renderability.jsErrors > 3 ? 'text-red-400' : 'text-green-400'}`}>
+                              {site.renderability.jsErrors}
+                            </span>
+                          </div>
+                          <div>
+                            <span className="text-gray-400">DOM Issues:</span>
+                            <span className={`ml-1 font-medium ${site.renderability.domIssues > 5 ? 'text-red-400' : 'text-green-400'}`}>
+                              {site.renderability.domIssues}
+                            </span>
+                          </div>
+                          <div>
+                            <span className="text-gray-400">Score:</span>
+                            <span className={`ml-1 font-medium ${getScoreColor(site.renderability.renderScore)}`}>
+                              {site.renderability.renderScore}
+                            </span>
+                          </div>
+                        </div>
+                        
+                        {!canRender && (
+                          <div className="mt-2 text-xs text-red-300 bg-red-900/30 p-2 rounded">
+                            ⚠️ <strong>CRITICAL:</strong> Google may not see this site's content!
+                          </div>
+                        )}
+                        {site.renderability.hydrationIssues && (
+                          <div className="mt-2 text-xs text-yellow-300 bg-yellow-900/30 p-2 rounded">
+                            ⚠️ Hydration issues detected
+                          </div>
+                        )}
+                        {site.renderability.criticalResourceErrors > 0 && (
+                          <div className="mt-2 text-xs text-orange-300 bg-orange-900/30 p-2 rounded">
+                            ⚠️ {site.renderability.criticalResourceErrors} critical resource errors
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* DOM Quality Analysis */}
+          <div className="bg-gray-800 rounded-2xl p-8">
+            <h3 className="text-2xl font-bold text-white mb-6">🏗️ DOM Structure Quality Analysis</h3>
+            
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-gray-600">
+                    <th className="text-left py-3 px-4 text-gray-300">Site</th>
+                    <th className="text-center py-3 px-4 text-gray-300">DOM Size</th>
+                    <th className="text-center py-3 px-4 text-gray-300">DOM Depth</th>
+                    <th className="text-center py-3 px-4 text-gray-300">Elements</th>
+                    <th className="text-center py-3 px-4 text-gray-300">Duplicate IDs</th>
+                    <th className="text-center py-3 px-4 text-gray-300">Invalid Markup</th>
+                    <th className="text-center py-3 px-4 text-gray-300">Semantic Score</th>
+                    <th className="text-center py-3 px-4 text-gray-300">Rank</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {results.sites.map((site, index) => {
+                    const domRank = results.rankings?.domQuality?.find(r => r.originalIndex === index)?.rank || index + 1;
+                    const isYourSite = index === 0;
+                    
+                    return (
+                      <tr key={index} className={`border-b border-gray-700 ${
+                        isYourSite ? 'bg-blue-900/20' : 
+                        domRank === 1 ? 'bg-green-900/20' : 
+                        domRank === results.sites.length ? 'bg-red-900/20' : ''
+                      }`}>
+                        <td className="py-3 px-4">
+                          <div className={`font-medium ${isYourSite ? 'text-blue-400' : 'text-white'}`}>
+                            {site.name}
+                          </div>
+                        </td>
+                        <td className="text-center py-3 px-4">
+                          <span className={site.domAnalysis.domSize > 300 ? 'text-red-400' : site.domAnalysis.domSize > 200 ? 'text-yellow-400' : 'text-green-400'}>
+                            {site.domAnalysis.domSize}KB
+                          </span>
+                        </td>
+                        <td className="text-center py-3 px-4">
+                          <span className={site.domAnalysis.domDepth > 12 ? 'text-red-400' : site.domAnalysis.domDepth > 8 ? 'text-yellow-400' : 'text-green-400'}>
+                            {site.domAnalysis.domDepth}
+                          </span>
+                        </td>
+                        <td className="text-center py-3 px-4 text-gray-300">
+                          {site.domAnalysis.totalElements.toLocaleString()}
+                        </td>
+                        <td className="text-center py-3 px-4">
+                          <span className={site.domAnalysis.duplicateIds > 0 ? 'text-red-400' : 'text-green-400'}>
+                            {site.domAnalysis.duplicateIds}
+                          </span>
+                        </td>
+                        <td className="text-center py-3 px-4">
+                          <span className={site.domAnalysis.invalidMarkup > 3 ? 'text-red-400' : site.domAnalysis.invalidMarkup > 0 ? 'text-yellow-400' : 'text-green-400'}>
+                            {site.domAnalysis.invalidMarkup}
+                          </span>
+                        </td>
+                        <td className="text-center py-3 px-4">
+                          <span className={getScoreColor(site.domAnalysis.semanticScore)}>
+                            {site.domAnalysis.semanticScore}%
+                          </span>
+                        </td>
+                        <td className="text-center py-3 px-4">
+                          <span className={`font-bold ${getRankColor(domRank, results.sites.length)}`}>
+                            {getRankBadge(domRank, results.sites.length)} #{domRank}
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
           <div className="bg-gray-800 rounded-2xl p-8">
             <h3 className="text-2xl font-bold text-white mb-6">🔍 Lighthouse Analysis Comparison</h3>
             
@@ -814,7 +1252,18 @@ export default function CompetitorAnalysis() {
           <div className="bg-gradient-to-r from-purple-900/50 to-blue-900/50 rounded-2xl p-8">
             <h3 className="text-2xl font-bold text-white mb-6">🎯 Priority Action Items</h3>
             
-            <div className="grid md:grid-cols-3 gap-6">
+            <div className="grid md:grid-cols-4 gap-6">
+              <div className="bg-gray-800/50 rounded-lg p-6">
+                <h4 className="text-lg font-semibold text-red-400 mb-4">🚨 Critical Fixes</h4>
+                <ul className="space-y-2 text-gray-300 text-sm">
+                  <li>• Fix crawlability issues</li>
+                  <li>• Resolve JavaScript render errors</li>
+                  <li>• Eliminate DOM structure problems</li>
+                  <li>• Fix duplicate IDs and invalid markup</li>
+                  <li>• Ensure robots.txt compliance</li>
+                </ul>
+              </div>
+              
               <div className="bg-gray-800/50 rounded-lg p-6">
                 <h4 className="text-lg font-semibold text-green-400 mb-4">🚀 Quick Wins</h4>
                 <ul className="space-y-2 text-gray-300 text-sm">
@@ -846,6 +1295,31 @@ export default function CompetitorAnalysis() {
                   <li>• Increase paragraph count</li>
                   <li>• Analyze competitor content gaps</li>
                 </ul>
+              </div>
+            </div>
+            
+            {/* Competitive Advantage Summary */}
+            <div className="mt-8 bg-gradient-to-r from-green-900/30 to-blue-900/30 rounded-lg p-6 border border-green-600">
+              <h4 className="text-lg font-semibold text-green-400 mb-4">🏆 Competitive Advantage Opportunities</h4>
+              <div className="grid md:grid-cols-2 gap-6 text-sm">
+                <div>
+                  <h5 className="text-white font-medium mb-2">📊 Technical Advantages to Exploit:</h5>
+                  <ul className="space-y-1 text-gray-300">
+                    <li>• Competitors with crawl errors lose 20-40% rankings</li>
+                    <li>• Render issues mean Google can't see their content</li>
+                    <li>• DOM bloat affects their Core Web Vitals</li>
+                    <li>• JavaScript errors hurt user experience</li>
+                  </ul>
+                </div>
+                <div>
+                  <h5 className="text-white font-medium mb-2">🎯 Marketing Opportunities:</h5>
+                  <ul className="space-y-1 text-gray-300">
+                    <li>• Target keywords where competitors have tech issues</li>
+                    <li>• Emphasize your superior page speed</li>
+                    <li>• Leverage accessibility advantages</li>
+                    <li>• Highlight content quality differences</li>
+                  </ul>
+                </div>
               </div>
             </div>
           </div>
