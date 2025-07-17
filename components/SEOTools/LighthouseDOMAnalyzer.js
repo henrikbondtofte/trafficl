@@ -15,8 +15,15 @@ export default function LighthouseDOMAnalyzer() {
   const API_KEY = 'AIzaSyAF4j61pzPAjPjCjZSkbvB_0LVBm-r1lFc'; // Replace with your actual API key
   const [apiKey, setApiKey] = useState(API_KEY);
   const [showApiKeyInput, setShowApiKeyInput] = useState(false);
-  const [apiKeyStatus, setApiKeyStatus] = useState('✅ API key set in code');
+  const [apiKeyStatus, setApiKeyStatus] = useState(API_KEY !== 'YOUR_API_KEY_HERE' ? '✅ API key ready' : '❌ Set API key in code');
   const [isTestingApiKey, setIsTestingApiKey] = useState(false);
+
+  // Auto-set API status if key is provided in code
+  useEffect(() => {
+    if (API_KEY && API_KEY !== 'YOUR_API_KEY_HERE') {
+      setApiKeyStatus('✅ API key ready - you can start testing');
+    }
+  }, []);
 
   // Google PageSpeed Insights API
   const PAGESPEED_API_BASE = 'https://www.googleapis.com/pagespeedonline/v5/runPagespeed';
@@ -68,12 +75,16 @@ https://www.slowsite.com
 https://www.timeout-site.com`);
   };
 
+  const isApiKeyReady = () => {
+    return apiKey && apiKey !== 'YOUR_API_KEY_HERE' && apiKey.trim().length > 0;
+  };
+
   const runSingleTest = () => {
     if (!singleUrl.trim()) {
       alert('Please enter a URL');
       return;
     }
-    if (!apiKey.trim()) {
+    if (!isApiKeyReady()) {
       alert('Please set your API key in the code');
       return;
     }
@@ -86,7 +97,7 @@ https://www.timeout-site.com`);
       alert('Please enter at least one URL');
       return;
     }
-    if (!apiKey.trim()) {
+    if (!isApiKeyReady()) {
       alert('Please set your API key in the code');
       return;
     }
@@ -592,49 +603,31 @@ https://www.github.com`);
           </p>
         </div>
 
-        {/* API Key Input - Now set in code */}
-        <div className="bg-green-50 border border-green-200 rounded-lg p-6 mb-8">
-          <h3 className="text-lg font-semibold text-green-800 mb-4">🔑 API Key Configuration</h3>
-          <div className="flex items-center gap-3 mb-4">
-            <div className="text-green-600 text-lg">✅</div>
-            <div>
-              <p className="text-green-700 font-medium">API Key is set in code</p>
-              <p className="text-green-600 text-sm">No need to enter it manually - ready to use!</p>
+        {/* API Key Status - Simplified when set in code */}
+        {isApiKeyReady() ? (
+          <div className="bg-green-50 border border-green-200 rounded-lg p-4 mb-8">
+            <div className="flex items-center gap-3">
+              <div className="text-green-600 text-lg">✅</div>
+              <div>
+                <p className="text-green-700 font-medium">API Key Ready</p>
+                <p className="text-green-600 text-sm">You can start testing URLs now</p>
+              </div>
             </div>
           </div>
-          
-          {/* Optional manual override */}
-          <details className="mt-4">
-            <summary className="cursor-pointer text-sm text-green-700 hover:text-green-800">
-              🔧 Advanced: Override API key for this session
-            </summary>
-            <div className="mt-3 p-3 bg-white rounded border">
-              <div className="flex gap-4 mb-2">
-                <input
-                  type="password"
-                  value={apiKey}
-                  onChange={(e) => setApiKey(e.target.value)}
-                  placeholder="Enter different API key"
-                  className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:border-green-500 focus:outline-none"
-                />
-                <button
-                  onClick={testApiKey}
-                  disabled={isTestingApiKey}
-                  className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50"
-                >
-                  {isTestingApiKey ? '🔄 Testing...' : '🧪 Test'}
-                </button>
+        ) : (
+          <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-8">
+            <div className="flex items-center gap-3">
+              <div className="text-red-600 text-lg">❌</div>
+              <div>
+                <p className="text-red-700 font-medium">API Key Required</p>
+                <p className="text-red-600 text-sm">Please set your Google PageSpeed Insights API key in the code</p>
+                <p className="text-red-600 text-xs mt-1">
+                  Find the line: <code className="bg-red-100 px-1 rounded">const API_KEY = 'YOUR_API_KEY_HERE';</code> and replace with your key
+                </p>
               </div>
-              {apiKeyStatus && (
-                <div className={`p-2 rounded text-sm ${
-                  apiKeyStatus.includes('✅') ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
-                }`}>
-                  {apiKeyStatus}
-                </div>
-              )}
             </div>
-          </details>
-        </div>
+          </div>
+        )}
 
         <div className="space-y-6 mb-8">
           <div>
@@ -676,14 +669,14 @@ https://www.github.com`);
           <div className="flex gap-4">
             <button
               onClick={runSingleTest}
-              disabled={isRunning || !apiKey}
+              disabled={isRunning || !isApiKeyReady()}
               className="px-6 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 font-semibold"
             >
               🚀 Test Single URL
             </button>
             <button
               onClick={runBatchTest}
-              disabled={isRunning || !apiKey}
+              disabled={isRunning || !isApiKeyReady()}
               className="px-6 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 font-semibold"
             >
               📋 Test Batch URLs
@@ -719,9 +712,9 @@ https://www.github.com`);
 
         {showResults && (
           <div>
-            <h2 className="text-2xl font-bold text-purple-900 mb-4">🔧 Real Lighthouse DOM Analysis Results</h2>
+            <h2 className="text-2xl font-bold text-purple-900 mb-4">🔧 Lighthouse DOM Analysis Results</h2>
             <p className="text-gray-600 mb-6">
-              <strong>Live Google Data:</strong> These results come directly from Google's PageSpeed Insights API - the same data that powers Google's own analysis tools.
+              <strong>Technical Analysis:</strong> DOM rendering issues, Core Web Vitals, and technical SEO insights from Google's PageSpeed API.
             </p>
             
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
