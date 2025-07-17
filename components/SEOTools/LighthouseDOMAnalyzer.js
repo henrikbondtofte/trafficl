@@ -13,9 +13,39 @@ export default function LighthouseDOMAnalyzer() {
   const [showResults, setShowResults] = useState(false);
   const [apiKey, setApiKey] = useState('');
   const [showApiKeyInput, setShowApiKeyInput] = useState(false);
+  const [apiKeyStatus, setApiKeyStatus] = useState('');
+  const [isTestingApiKey, setIsTestingApiKey] = useState(false);
 
   // Google PageSpeed Insights API
   const PAGESPEED_API_BASE = 'https://www.googleapis.com/pagespeedonline/v5/runPagespeed';
+
+  const testApiKey = async () => {
+    if (!apiKey.trim()) {
+      setApiKeyStatus('❌ Please enter an API key');
+      return;
+    }
+
+    setIsTestingApiKey(true);
+    setApiKeyStatus('🔄 Testing API key...');
+
+    try {
+      const testUrl = 'https://www.google.com';
+      const apiUrl = `${PAGESPEED_API_BASE}?url=${encodeURIComponent(testUrl)}&key=${apiKey}&strategy=mobile&category=PERFORMANCE`;
+      
+      const response = await fetch(apiUrl);
+      
+      if (response.ok) {
+        setApiKeyStatus('✅ API key is valid and working!');
+      } else {
+        const errorData = await response.json();
+        setApiKeyStatus(`❌ API key error: ${errorData.error?.message || 'Invalid key'}`);
+      }
+    } catch (error) {
+      setApiKeyStatus(`❌ Test failed: ${error.message}`);
+    } finally {
+      setIsTestingApiKey(false);
+    }
+  };
 
   const loadHeavySites = () => {
     setBatchUrls(`https://www.cnn.com
@@ -42,8 +72,12 @@ https://www.timeout-site.com`);
       return;
     }
     if (!apiKey.trim()) {
-      alert('Please enter your Google PageSpeed API key');
-      setShowApiKeyInput(true);
+      alert('Please enter your Google PageSpeed API key and test it first');
+      setApiKeyStatus('❌ API key required');
+      return;
+    }
+    if (!apiKeyStatus.includes('✅')) {
+      alert('Please test your API key first to make sure it works');
       return;
     }
     runTests([singleUrl.trim()]);
@@ -56,8 +90,12 @@ https://www.timeout-site.com`);
       return;
     }
     if (!apiKey.trim()) {
-      alert('AIzaSyAF4j61pzPAjPjCjZSkbvB_0LVBm-r1lFc');
-      setShowApiKeyInput(true);
+      alert('Please enter your Google PageSpeed API key and test it first');
+      setApiKeyStatus('❌ API key required');
+      return;
+    }
+    if (!apiKeyStatus.includes('✅')) {
+      alert('Please test your API key first to make sure it works');
       return;
     }
     runTests(urls);
@@ -142,16 +180,32 @@ https://www.timeout-site.com`);
     const apiUrl = `${PAGESPEED_API_BASE}?url=${encodeURIComponent(url)}&key=${apiKey}&strategy=${strategy}&category=PERFORMANCE&category=ACCESSIBILITY&category=BEST_PRACTICES&category=SEO`;
     
     setLogOutput(prev => prev + `\n🔄 Fetching ${strategy} data...`);
+    setLogOutput(prev => prev + `\n🔗 API URL: ${apiUrl.replace(apiKey, 'YOUR_API_KEY')}`);
     
     const response = await fetch(apiUrl);
     
+    setLogOutput(prev => prev + `\n📡 Response status: ${response.status} ${response.statusText}`);
+    
     if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(`PageSpeed API Error: ${errorData.error?.message || response.statusText}`);
+      let errorMessage = `HTTP ${response.status}: ${response.statusText}`;
+      
+      try {
+        const errorData = await response.json();
+        errorMessage = `PageSpeed API Error: ${errorData.error?.message || errorMessage}`;
+        setLogOutput(prev => prev + `\n❌ API Error: ${errorData.error?.message || 'Unknown error'}`);
+        
+        if (errorData.error?.code === 400) {
+          errorMessage += '\n💡 Common fixes:\n- Check API key is valid\n- Ensure URL is accessible\n- Verify API key has PageSpeed Insights permissions';
+        }
+      } catch (parseError) {
+        setLogOutput(prev => prev + `\n❌ Failed to parse error response: ${parseError.message}`);
+      }
+      
+      throw new Error(errorMessage);
     }
     
     const data = await response.json();
-    setLogOutput(prev => prev + `\n✅ ${strategy} data received`);
+    setLogOutput(prev => prev + `\n✅ ${strategy} data received successfully`);
     
     return data;
   };
@@ -442,7 +496,7 @@ https://www.github.com`);
               Get your API key here →
             </a>
           </p>
-          <div className="flex gap-4">
+          <div className="flex gap-4 mb-4">
             <input
               type="password"
               value={apiKey}
@@ -451,11 +505,28 @@ https://www.github.com`);
               className="flex-1 px-4 py-2 border border-yellow-300 rounded-lg focus:border-yellow-500 focus:outline-none"
             />
             <button
-              onClick={() => setShowApiKeyInput(!showApiKeyInput)}
-              className="px-4 py-2 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700"
+              onClick={testApiKey}
+              disabled={isTestingApiKey}
+              className="px-6 py-2 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700 disabled:opacity-50"
             >
-              {apiKey ? '✅ Set' : '⚠️ Required'}
+              {isTestingApiKey ? '🔄 Testing...' : '🧪 Test Key'}
             </button>
+          </div>
+          {apiKeyStatus && (
+            <div className={`p-3 rounded-lg text-sm ${
+              apiKeyStatus.includes('✅') ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+            }`}>
+              {apiKeyStatus}
+            </div>
+          )}
+          <div className="mt-4 text-sm text-yellow-700">
+            <strong>💡 Troubleshooting:</strong>
+            <ul className="mt-2 ml-4 space-y-1">
+              <li>• Make sure your API key has PageSpeed Insights API enabled</li>
+              <li>• Check that there are no extra spaces in your API key</li>
+              <li>• Ensure your API key quotas aren't exceeded</li>
+              <li>• The API key should be about 40 characters long</li>
+            </ul>
           </div>
         </div>
 
@@ -499,14 +570,14 @@ https://www.github.com`);
           <div className="flex gap-4">
             <button
               onClick={runSingleTest}
-              disabled={isRunning || !apiKey}
+              disabled={isRunning || !apiKey || !apiKeyStatus.includes('✅')}
               className="px-6 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 font-semibold"
             >
               🚀 Test Single URL
             </button>
             <button
               onClick={runBatchTest}
-              disabled={isRunning || !apiKey}
+              disabled={isRunning || !apiKey || !apiKeyStatus.includes('✅')}
               className="px-6 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 font-semibold"
             >
               📋 Test Batch URLs
