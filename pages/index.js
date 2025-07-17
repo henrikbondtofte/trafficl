@@ -32,7 +32,7 @@ export default function Home() {
         </div>
 
         {/* Tools Grid */}
-        <div className="grid md:grid-cols-2 gap-8 mb-16">
+        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8 mb-16">
           
           {/* Core Update Analyzer */}
           <div className="bg-white rounded-xl shadow-lg overflow-hidden hover:shadow-xl transition-shadow">
@@ -110,6 +110,47 @@ export default function Home() {
               <Link href="/lighthouse-dom-analyzer">
                 <button className="w-full bg-purple-600 text-white py-3 px-4 rounded-lg hover:bg-purple-700 transition-colors flex items-center justify-center">
                   Launch DOM Analyzer
+                  <ArrowRight className="w-4 h-4 ml-2" />
+                </button>
+              </Link>
+            </div>
+          </div>
+
+          {/* Competitor Analysis */}
+          <div className="bg-white rounded-xl shadow-lg overflow-hidden hover:shadow-xl transition-shadow">
+            <div className="bg-gradient-to-r from-green-600 to-green-700 p-6">
+              <div className="flex items-center mb-4">
+                <BarChart3 className="w-8 h-8 text-white mr-3" />
+                <h3 className="text-2xl font-bold text-white">Competitor Analysis</h3>
+              </div>
+              <p className="text-green-100">
+                Compare your site against competitors. Identify technical gaps and opportunities
+              </p>
+            </div>
+            
+            <div className="p-6">
+              <div className="space-y-3 mb-6">
+                <div className="flex items-center">
+                  <CheckCircle className="w-5 h-5 text-green-500 mr-3" />
+                  <span>Site-to-site performance comparison</span>
+                </div>
+                <div className="flex items-center">
+                  <CheckCircle className="w-5 h-5 text-green-500 mr-3" />
+                  <span>Technical SEO gap analysis</span>
+                </div>
+                <div className="flex items-center">
+                  <CheckCircle className="w-5 h-5 text-green-500 mr-3" />
+                  <span>Identify ranking opportunities</span>
+                </div>
+                <div className="flex items-center">
+                  <CheckCircle className="w-5 h-5 text-green-500 mr-3" />
+                  <span>Competitive intelligence insights</span>
+                </div>
+              </div>
+              
+              <Link href="/competitor-analysis">
+                <button className="w-full bg-green-600 text-white py-3 px-4 rounded-lg hover:bg-green-700 transition-colors flex items-center justify-center">
+                  Launch Competitor Analysis
                   <ArrowRight className="w-4 h-4 ml-2" />
                 </button>
               </Link>
