@@ -13,7 +13,7 @@ export default function Home() {
               🔬 Trafficlab
             </h1>
             <p className="text-xl text-gray-600">
-              Professional SEO Analysis Tools Suite
+              Internal SEO Analysis Tools
             </p>
           </div>
         </div>
@@ -23,11 +23,11 @@ export default function Home() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
         <div className="text-center mb-16">
           <h2 className="text-3xl font-bold text-gray-900 mb-6">
-            Advanced SEO Analysis Tools
+            Internal SEO Analysis Tools
           </h2>
           <p className="text-lg text-gray-600 max-w-3xl mx-auto">
-            Deep insights into Core Updates impact and DOM rendering issues that Google Search Console doesn't show you. 
-            Built for SEO professionals who need technical precision.
+            Specialized tools for analyzing Core Updates impact and DOM rendering issues. 
+            Built for internal analysis and client reporting.
           </p>
         </div>
 
@@ -161,31 +161,31 @@ export default function Home() {
         {/* Features Section */}
         <div className="bg-white rounded-xl shadow-lg p-8">
           <h3 className="text-2xl font-bold text-gray-900 mb-6 text-center">
-            Why Choose Trafficlab?
+            Internal Analysis Capabilities
           </h3>
           
           <div className="grid md:grid-cols-3 gap-8">
             <div className="text-center">
               <BarChart3 className="w-12 h-12 text-blue-600 mx-auto mb-4" />
-              <h4 className="text-lg font-semibold mb-3">Deep Analysis</h4>
+              <h4 className="text-lg font-semibold mb-3">Technical Analysis</h4>
               <p className="text-gray-600">
-                Go beyond surface metrics with technical insights that Search Console can't provide
+                Access to data and insights that standard tools don't provide
               </p>
             </div>
             
             <div className="text-center">
               <Target className="w-12 h-12 text-purple-600 mx-auto mb-4" />
-              <h4 className="text-lg font-semibold mb-3">Actionable Insights</h4>
+              <h4 className="text-lg font-semibold mb-3">Client Reporting</h4>
               <p className="text-gray-600">
-                Get specific recommendations and exportable data for immediate SEO improvements
+                Generate detailed reports and export data for client presentations
               </p>
             </div>
             
             <div className="text-center">
               <Zap className="w-12 h-12 text-green-600 mx-auto mb-4" />
-              <h4 className="text-lg font-semibold mb-3">Professional Grade</h4>
+              <h4 className="text-lg font-semibold mb-3">Internal Use</h4>
               <p className="text-gray-600">
-                Built for SEO professionals who need technical precision and detailed analysis
+                Specialized tools built for Trafficlab's internal analysis workflows
               </p>
             </div>
           </div>
@@ -195,7 +195,7 @@ export default function Home() {
       {/* Footer */}
       <footer className="bg-gray-900 text-white py-8">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
-          <p>&copy; 2025 Trafficlab. Professional SEO Analysis Tools.</p>
+          <p>&copy; 2025 Trafficlab. Internal SEO Analysis Tools.</p>
         </div>
       </footer>
     </div>
