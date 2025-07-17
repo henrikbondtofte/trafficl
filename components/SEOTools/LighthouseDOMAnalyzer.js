@@ -11,9 +11,11 @@ export default function LighthouseDOMAnalyzer() {
   const [progressText, setProgressText] = useState('');
   const [logOutput, setLogOutput] = useState('');
   const [showResults, setShowResults] = useState(false);
-  const [apiKey, setApiKey] = useState('');
+  // Set your API key here - no need to enter it every time
+  const API_KEY = 'YOUR_API_KEY_HERE'; // Replace with your actual API key
+  const [apiKey, setApiKey] = useState(API_KEY);
   const [showApiKeyInput, setShowApiKeyInput] = useState(false);
-  const [apiKeyStatus, setApiKeyStatus] = useState('');
+  const [apiKeyStatus, setApiKeyStatus] = useState('✅ API key set in code');
   const [isTestingApiKey, setIsTestingApiKey] = useState(false);
 
   // Google PageSpeed Insights API
@@ -72,12 +74,7 @@ https://www.timeout-site.com`);
       return;
     }
     if (!apiKey.trim()) {
-      alert('Please enter your Google PageSpeed API key and test it first');
-      setApiKeyStatus('❌ API key required');
-      return;
-    }
-    if (!apiKeyStatus.includes('✅')) {
-      alert('Please test your API key first to make sure it works');
+      alert('Please set your API key in the code');
       return;
     }
     runTests([singleUrl.trim()]);
@@ -90,12 +87,7 @@ https://www.timeout-site.com`);
       return;
     }
     if (!apiKey.trim()) {
-      alert('Please enter your Google PageSpeed API key and test it first');
-      setApiKeyStatus('❌ API key required');
-      return;
-    }
-    if (!apiKeyStatus.includes('✅')) {
-      alert('Please test your API key first to make sure it works');
+      alert('Please set your API key in the code');
       return;
     }
     runTests(urls);
@@ -135,9 +127,9 @@ https://www.timeout-site.com`);
         });
       }
       
-      // Add delay to respect rate limits
+      // Add delay to respect rate limits (Google has strict limits)
       if (i < urls.length - 1) {
-        await new Promise(resolve => setTimeout(resolve, 2000));
+        await new Promise(resolve => setTimeout(resolve, 3000)); // 3 second delay between requests
       }
     }
     
@@ -281,6 +273,7 @@ https://www.timeout-site.com`);
   const extractArtifactTiming = (mobileMetrics, desktopMetrics) => {
     const extractTime = (audit) => {
       if (!audit) return 'N/A';
+      if (!audit.numericValue || audit.numericValue === undefined) return 'N/A';
       const time = audit.numericValue;
       if (time > 5000) return 'timeout';
       return `${Math.round(time)}ms`;
@@ -290,9 +283,9 @@ https://www.timeout-site.com`);
       globalListeners: extractTime(mobileMetrics['long-tasks']),
       imageElements: extractTime(mobileMetrics['offscreen-images']),
       doctype: extractTime(mobileMetrics['speed-index']),
-      inspectorIssues: extractTime(mobileMetrics['diagnostics']),
+      inspectorIssues: extractTime(mobileMetrics['diagnostics']) || extractTime(mobileMetrics['critical-request-chains']),
       inputs: extractTime(mobileMetrics['interactive']),
-      installabilityErrors: extractTime(mobileMetrics['installable-manifest'])
+      installabilityErrors: extractTime(mobileMetrics['installable-manifest']) || extractTime(mobileMetrics['pwa-cross-browser'])
     };
   };
 
@@ -442,6 +435,118 @@ https://www.timeout-site.com`);
     }
   };
 
+  const toggleAuditDetails = (resultIndex, auditType) => {
+    const key = `${resultIndex}-${auditType}`;
+    setExpandedAudits(prev => ({
+      ...prev,
+      [key]: !prev[key]
+    }));
+  };
+
+  const toggleDeveloperInsights = (resultIndex) => {
+    setShowDeveloperInsights(prev => ({
+      ...prev,
+      [resultIndex]: !prev[resultIndex]
+    }));
+  };
+
+  const openGooglePageSpeed = (url) => {
+    const googleUrl = `https://pagespeed.web.dev/report?url=${encodeURIComponent(url)}`;
+    window.open(googleUrl, '_blank');
+  };
+
+  const generateDeveloperReport = (result) => {
+    const issues = [];
+    
+    if (result.domPushErrors > 0) {
+      issues.push({
+        type: 'DOM Errors',
+        severity: 'high',
+        count: result.domPushErrors,
+        description: 'DOM.pushNodeByPathToFrontend errors detected',
+        solutions: [
+          'Review JavaScript that manipulates DOM elements',
+          'Check for missing or dynamically created elements',
+          'Ensure DOM elements exist before JavaScript tries to access them',
+          'Consider using MutationObserver for dynamic content'
+        ]
+      });
+    }
+    
+    if (result.detailedErrors?.some(err => err.includes('unused-javascript'))) {
+      issues.push({
+        type: 'Unused JavaScript',
+        severity: 'medium',
+        description: 'Large amounts of unused JavaScript detected',
+        solutions: [
+          'Remove unused JavaScript libraries and plugins',
+          'Implement code splitting for large applications',
+          'Use tree shaking to eliminate dead code',
+          'Consider lazy loading for non-critical scripts'
+        ]
+      });
+    }
+    
+    if (result.detailedErrors?.some(err => err.includes('largest-contentful-paint'))) {
+      issues.push({
+        type: 'Slow LCP',
+        severity: 'high',
+        description: 'Largest Contentful Paint is slower than 2.5 seconds',
+        solutions: [
+          'Optimize images and use modern formats (WebP, AVIF)',
+          'Implement lazy loading for below-the-fold content',
+          'Reduce server response time',
+          'Remove render-blocking resources',
+          'Use a Content Delivery Network (CDN)'
+        ]
+      });
+    }
+    
+    if (result.artifacts?.globalListeners && result.artifacts.globalListeners !== 'N/A') {
+      const time = parseInt(result.artifacts.globalListeners);
+      if (time > 50) {
+        issues.push({
+          type: 'Heavy Event Listeners',
+          severity: 'medium',
+          description: 'Event listeners are taking too long to process',
+          solutions: [
+            'Optimize event handler functions',
+            'Use event delegation instead of multiple listeners',
+            'Consider debouncing for frequent events',
+            'Remove unused event listeners'
+          ]
+        });
+      }
+    }
+    
+    return issues;
+  };
+
+  const exportDeveloperReport = (result) => {
+    const issues = generateDeveloperReport(result);
+    const report = {
+      url: result.url,
+      timestamp: new Date().toISOString(),
+      summary: {
+        mobileScore: result.mobileScore,
+        desktopScore: result.desktopScore,
+        domPushErrors: result.domPushErrors,
+        gscImpact: result.gscImpact
+      },
+      issues: issues,
+      artifacts: result.artifacts,
+      recommendations: issues.flatMap(issue => issue.solutions)
+    };
+    
+    const blob = new Blob([JSON.stringify(report, null, 2)], { type: 'application/json' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `developer-report-${new Date().toISOString().split('T')[0]}.json`;
+    a.click();
+    window.URL.revokeObjectURL(url);
+  };
+
   const getSummaryStats = () => {
     if (testResults.length === 0) return { healthy: 0, warnings: 0, errors: 0, avgDomErrors: 0 };
     
@@ -477,57 +582,58 @@ https://www.github.com`);
 
         <div className="bg-blue-50 border border-blue-200 rounded-lg p-6 mb-8">
           <p className="mb-3 text-gray-700">
-            <strong>🔄 Now with REAL data!</strong> This tool uses Google's PageSpeed Insights API to analyze actual DOM rendering issues, Core Web Vitals, and technical SEO problems that Google Search Console doesn't show you.
+            <strong>Technical SEO Analysis:</strong> This tool analyzes DOM rendering issues, Core Web Vitals, and technical SEO problems that Google Search Console doesn't show you.
           </p>
           <p className="mb-3 text-gray-700">
-            <strong>This tool reveals:</strong> DOM.pushNodeByPathToFrontend errors, artifact timeouts, ImageElements budget overruns, and GlobalListeners timing - everything that affects how AI Overviews and Googlebot see your content.
+            <strong>Analysis includes:</strong> DOM.pushNodeByPathToFrontend errors, artifact timeouts, ImageElements budget overruns, and GlobalListeners timing.
           </p>
           <p className="text-gray-700">
-            <em>Real Lighthouse data from the same API that powers Google's own tools.</em>
+            <strong>⏱️ Analysis Speed:</strong> Each URL takes 10-15 seconds for complete mobile and desktop Lighthouse analysis.
           </p>
         </div>
 
-        {/* API Key Input */}
-        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-6 mb-8">
-          <h3 className="text-lg font-semibold text-yellow-800 mb-4">🔑 Google PageSpeed Insights API Key Required</h3>
-          <p className="text-yellow-700 mb-4">
-            To use real Lighthouse data, you need a free Google PageSpeed Insights API key.
-            <a href="https://developers.google.com/speed/docs/insights/v5/get-started" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:text-blue-800 ml-1">
-              Get your API key here →
-            </a>
-          </p>
-          <div className="flex gap-4 mb-4">
-            <input
-              type="password"
-              value={apiKey}
-              onChange={(e) => setApiKey(e.target.value)}
-              placeholder="Enter your Google PageSpeed API key"
-              className="flex-1 px-4 py-2 border border-yellow-300 rounded-lg focus:border-yellow-500 focus:outline-none"
-            />
-            <button
-              onClick={testApiKey}
-              disabled={isTestingApiKey}
-              className="px-6 py-2 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700 disabled:opacity-50"
-            >
-              {isTestingApiKey ? '🔄 Testing...' : '🧪 Test Key'}
-            </button>
-          </div>
-          {apiKeyStatus && (
-            <div className={`p-3 rounded-lg text-sm ${
-              apiKeyStatus.includes('✅') ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
-            }`}>
-              {apiKeyStatus}
+        {/* API Key Input - Now set in code */}
+        <div className="bg-green-50 border border-green-200 rounded-lg p-6 mb-8">
+          <h3 className="text-lg font-semibold text-green-800 mb-4">🔑 API Key Configuration</h3>
+          <div className="flex items-center gap-3 mb-4">
+            <div className="text-green-600 text-lg">✅</div>
+            <div>
+              <p className="text-green-700 font-medium">API Key is set in code</p>
+              <p className="text-green-600 text-sm">No need to enter it manually - ready to use!</p>
             </div>
-          )}
-          <div className="mt-4 text-sm text-yellow-700">
-            <strong>💡 Troubleshooting:</strong>
-            <ul className="mt-2 ml-4 space-y-1">
-              <li>• Make sure your API key has PageSpeed Insights API enabled</li>
-              <li>• Check that there are no extra spaces in your API key</li>
-              <li>• Ensure your API key quotas aren't exceeded</li>
-              <li>• The API key should be about 40 characters long</li>
-            </ul>
           </div>
+          
+          {/* Optional manual override */}
+          <details className="mt-4">
+            <summary className="cursor-pointer text-sm text-green-700 hover:text-green-800">
+              🔧 Advanced: Override API key for this session
+            </summary>
+            <div className="mt-3 p-3 bg-white rounded border">
+              <div className="flex gap-4 mb-2">
+                <input
+                  type="password"
+                  value={apiKey}
+                  onChange={(e) => setApiKey(e.target.value)}
+                  placeholder="Enter different API key"
+                  className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:border-green-500 focus:outline-none"
+                />
+                <button
+                  onClick={testApiKey}
+                  disabled={isTestingApiKey}
+                  className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50"
+                >
+                  {isTestingApiKey ? '🔄 Testing...' : '🧪 Test'}
+                </button>
+              </div>
+              {apiKeyStatus && (
+                <div className={`p-2 rounded text-sm ${
+                  apiKeyStatus.includes('✅') ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                }`}>
+                  {apiKeyStatus}
+                </div>
+              )}
+            </div>
+          </details>
         </div>
 
         <div className="space-y-6 mb-8">
@@ -570,14 +676,14 @@ https://www.github.com`);
           <div className="flex gap-4">
             <button
               onClick={runSingleTest}
-              disabled={isRunning || !apiKey || !apiKeyStatus.includes('✅')}
+              disabled={isRunning || !apiKey}
               className="px-6 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 font-semibold"
             >
               🚀 Test Single URL
             </button>
             <button
               onClick={runBatchTest}
-              disabled={isRunning || !apiKey || !apiKeyStatus.includes('✅')}
+              disabled={isRunning || !apiKey}
               className="px-6 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 font-semibold"
             >
               📋 Test Batch URLs
@@ -697,22 +803,30 @@ https://www.github.com`);
                               {result.gscImpact?.toUpperCase() || 'UNKNOWN'}
                             </td>
                             <td className="px-4 py-3">
-                              <button
-                                onClick={() => toggleDetails(index)}
-                                className="bg-purple-600 text-white px-3 py-1 rounded text-sm hover:bg-purple-700"
-                              >
-                                Show Details
-                              </button>
+                              <div className="flex gap-2">
+                                <button
+                                  onClick={() => toggleDetails(index)}
+                                  className="bg-purple-600 text-white px-3 py-1 rounded text-sm hover:bg-purple-700"
+                                >
+                                  Details
+                                </button>
+                                <button
+                                  onClick={() => openGooglePageSpeed(result.url)}
+                                  className="bg-blue-600 text-white px-3 py-1 rounded text-sm hover:bg-blue-700"
+                                >
+                                  🔍 Verify
+                                </button>
+                              </div>
                             </td>
                           </tr>
                           
                           <tr>
                             <td colSpan="7">
                               <div id={`details-${index}`} className="hidden bg-gray-50 border-l-4 border-purple-600 p-4">
-                                <h4 className="font-bold text-purple-900 mb-3">🔍 Real Lighthouse Data & Analysis</h4>
+                                <h4 className="font-bold text-purple-900 mb-3">🔍 Lighthouse Analysis Details</h4>
                                 <div className="grid md:grid-cols-2 gap-6 mb-4">
                                   <div>
-                                    <strong className="text-purple-800">⚡ Real Lighthouse Scores:</strong>
+                                    <strong className="text-purple-800">⚡ Lighthouse Scores:</strong>
                                     <ul className="mt-2 space-y-1 text-sm">
                                       <li className="flex justify-between"><span>Performance (Mobile):</span><span className="font-mono bg-blue-100 px-2 py-1 rounded">{result.mobileScore || 'N/A'}</span></li>
                                       <li className="flex justify-between"><span>Performance (Desktop):</span><span className="font-mono bg-blue-100 px-2 py-1 rounded">{result.desktopScore || 'N/A'}</span></li>
@@ -727,7 +841,13 @@ https://www.github.com`);
                                       <li className="flex justify-between"><span>Images Skipped:</span><span>{result.imageBudgetData?.skipped || 0}/{result.imageBudgetData?.total || 0}</span></li>
                                       <li className="flex justify-between"><span>Budget Time:</span><span>{result.imageBudgetData?.budgetTime || 'N/A'}</span></li>
                                       <li className="flex justify-between"><span>Fetch Success:</span><span>{result.imageBudgetData?.fetchedPercentage?.toFixed(1) || 'N/A'}%</span></li>
-                                      <li className="flex justify-between"><span>DOM Push Errors:</span><span className="font-mono bg-red-100 px-2 py-1 rounded">{result.domPushErrors}</span></li>
+                                      <li className="flex justify-between">
+                                        <span>DOM Push Errors:</span>
+                                        <span className="font-mono bg-red-100 px-2 py-1 rounded cursor-pointer hover:bg-red-200" 
+                                              onClick={() => toggleAuditDetails(index, 'dom-errors')}>
+                                          {result.domPushErrors} {result.domPushErrors > 0 ? '🔍' : ''}
+                                        </span>
+                                      </li>
                                       <li className="flex justify-between"><span>GSC Impact Risk:</span><span className={`font-semibold ${
                                         result.gscImpact === 'high' ? 'text-red-600' : 
                                         result.gscImpact === 'medium' ? 'text-yellow-600' : 'text-green-600'
@@ -735,12 +855,109 @@ https://www.github.com`);
                                     </ul>
                                   </div>
                                 </div>
-                                <strong className="text-purple-800">📝 Real Lighthouse Audit Results:</strong>
-                                <ul className="mt-2 space-y-1 text-sm font-mono">
+                                
+                                <strong className="text-purple-800">📝 Lighthouse Audit Results:</strong>
+                                <div className="mt-2 space-y-1 text-sm">
                                   {result.detailedErrors?.map((error, i) => (
-                                    <li key={i} className="bg-red-50 p-2 rounded">{error}</li>
-                                  )) || <li className="bg-gray-100 p-2 rounded">No detailed errors available</li>}
-                                </ul>
+                                    <div key={i} className="bg-red-50 p-2 rounded cursor-pointer hover:bg-red-100" 
+                                         onClick={() => toggleAuditDetails(index, `audit-${i}`)}>
+                                      <div className="flex justify-between items-center">
+                                        <span className="font-mono text-sm">{error}</span>
+                                        <span className="text-xs text-gray-500">🔍 Click for details</span>
+                                      </div>
+                                      
+                                      {expandedAudits[`${index}-audit-${i}`] && (
+                                        <div className="mt-2 p-3 bg-white rounded border text-xs">
+                                          {error.includes('DOM.pushNodeByPathToFrontend') && (
+                                            <div>
+                                              <strong className="text-red-600">DOM Node Errors:</strong>
+                                              <p className="mt-1">These errors occur when JavaScript tries to access DOM elements that don't exist or haven't been rendered yet.</p>
+                                              <p className="mt-1"><strong>Impact:</strong> Can cause content to not display properly for Googlebot.</p>
+                                            </div>
+                                          )}
+                                          {error.includes('unused-javascript') && (
+                                            <div>
+                                              <strong className="text-orange-600">Unused JavaScript:</strong>
+                                              <p className="mt-1">Large amounts of JavaScript code that isn't being used on this page.</p>
+                                              <p className="mt-1"><strong>Impact:</strong> Slows down page load time and affects Core Web Vitals.</p>
+                                            </div>
+                                          )}
+                                          {error.includes('largest-contentful-paint') && (
+                                            <div>
+                                              <strong className="text-red-600">Slow LCP:</strong>
+                                              <p className="mt-1">The largest content element takes too long to load (>2.5s).</p>
+                                              <p className="mt-1"><strong>Impact:</strong> Directly affects Google rankings and user experience.</p>
+                                            </div>
+                                          )}
+                                          {error.includes('globalListeners') && (
+                                            <div>
+                                              <strong className="text-blue-600">Event Listeners:</strong>
+                                              <p className="mt-1">Time spent processing JavaScript event listeners.</p>
+                                              <p className="mt-1"><strong>Impact:</strong> High values can block main thread and affect interactivity.</p>
+                                            </div>
+                                          )}
+                                        </div>
+                                      )}
+                                    </div>
+                                  )) || <div className="bg-gray-100 p-2 rounded">No detailed errors available</div>}
+                                </div>
+                                
+                                {/* Developer Insights Section */}
+                                <div className="mt-6 pt-4 border-t border-gray-300">
+                                  <div className="flex justify-between items-center mb-3">
+                                    <h5 className="font-bold text-purple-900">👨‍💻 Developer Insights</h5>
+                                    <div className="flex gap-2">
+                                      <button
+                                        onClick={() => toggleDeveloperInsights(index)}
+                                        className="bg-green-600 text-white px-3 py-1 rounded text-sm hover:bg-green-700"
+                                      >
+                                        {showDeveloperInsights[index] ? 'Hide' : 'Show'} Action Items
+                                      </button>
+                                      <button
+                                        onClick={() => exportDeveloperReport(result)}
+                                        className="bg-blue-600 text-white px-3 py-1 rounded text-sm hover:bg-blue-700"
+                                      >
+                                        📋 Export Report
+                                      </button>
+                                    </div>
+                                  </div>
+                                  
+                                  {showDeveloperInsights[index] && (
+                                    <div className="bg-white p-4 rounded border">
+                                      <h6 className="font-semibold text-gray-800 mb-3">🔧 Issues to Fix:</h6>
+                                      {generateDeveloperReport(result).map((issue, issueIndex) => (
+                                        <div key={issueIndex} className="mb-4 p-3 bg-gray-50 rounded">
+                                          <div className="flex justify-between items-start mb-2">
+                                            <h6 className="font-medium text-gray-900">{issue.type}</h6>
+                                            <span className={`px-2 py-1 rounded text-xs font-medium ${
+                                              issue.severity === 'high' ? 'bg-red-100 text-red-800' :
+                                              issue.severity === 'medium' ? 'bg-yellow-100 text-yellow-800' :
+                                              'bg-green-100 text-green-800'
+                                            }`}>
+                                              {issue.severity.toUpperCase()}
+                                            </span>
+                                          </div>
+                                          <p className="text-sm text-gray-700 mb-2">{issue.description}</p>
+                                          {issue.count && <p className="text-xs text-gray-600 mb-2">Count: {issue.count}</p>}
+                                          <div className="text-xs text-gray-600">
+                                            <strong>Solutions:</strong>
+                                            <ul className="mt-1 ml-4 space-y-1">
+                                              {issue.solutions.map((solution, solutionIndex) => (
+                                                <li key={solutionIndex} className="list-disc">{solution}</li>
+                                              ))}
+                                            </ul>
+                                          </div>
+                                        </div>
+                                      ))}
+                                      
+                                      {generateDeveloperReport(result).length === 0 && (
+                                        <div className="text-center py-4 text-gray-500">
+                                          ✅ No critical issues found! Your site is performing well.
+                                        </div>
+                                      )}
+                                    </div>
+                                  )}
+                                </div>
                               </div>
                             </td>
                           </tr>
@@ -768,30 +985,30 @@ https://www.github.com`);
             </div>
 
             <div className="bg-green-50 p-6 rounded-lg mt-6">
-              <h4 className="text-green-800 font-bold mb-3">🎯 Real Google PageSpeed Insights Data:</h4>
+              <h4 className="text-green-800 font-bold mb-3">💡 What This Analysis Reveals:</h4>
               <ul className="text-green-700 space-y-2">
-                <li><strong>Actual Core Web Vitals:</strong> Real performance metrics from Google's infrastructure</li>
-                <li><strong>Live DOM Analysis:</strong> Current DOM errors and rendering issues detected by Lighthouse</li>
-                <li><strong>Real Resource Timing:</strong> Actual timing data for scripts, images, and other resources</li>
-                <li><strong>Google's Perspective:</strong> See your site exactly as Google's crawlers and indexing systems see it</li>
-                <li><strong>Actionable Insights:</strong> Based on the same data that influences your search rankings</li>
+                <li><strong>GlobalListeners timing:</strong> Heavy JS event listeners that block Googlebot crawling</li>
+                <li><strong>DOM.pushNodeByPathToFrontend errors:</strong> Critical DOM rendering errors invisible to GSC</li>
+                <li><strong>Artifact gathering timeouts:</strong> When Lighthouse (and Googlebot) gives up on resources</li>
+                <li><strong>InstallabilityErrors timing:</strong> PWA detection overhead that affects crawl budget</li>
+                <li><strong>InspectorIssues timing:</strong> Browser warnings that correlate with indexing problems</li>
               </ul>
             </div>
           </div>
         )}
 
         <div className="bg-gray-50 p-6 rounded-lg mt-8">
-          <h3 className="text-xl font-bold text-gray-900 mb-4">🔄 Now with Real Lighthouse Analysis!</h3>
+          <h3 className="text-xl font-bold text-gray-900 mb-4">🔧 Technical SEO Analysis Tool</h3>
           <p className="mb-4 text-gray-700">
-            This tool now uses <strong>real Google PageSpeed Insights API data</strong> to give you the same analysis that Google uses internally. No more mock data - you get actual performance metrics, DOM errors, and technical SEO insights.
+            This tool analyzes your site using Google's PageSpeed Insights API to provide technical SEO insights that directly impact your search rankings.
           </p>
           
           <p className="mb-4 text-gray-700">
-            <strong>What you get:</strong> Real Core Web Vitals, actual DOM.pushNodeByPathToFrontend errors, live resource timing data, and genuine Lighthouse audit results that directly impact your search rankings.
+            <strong>Key features:</strong> Core Web Vitals analysis, DOM error detection, resource timing data, and developer-friendly action items for immediate improvements.
           </p>
           
           <p className="text-gray-700">
-            <strong>API Key Required:</strong> Get your free Google PageSpeed Insights API key to unlock unlimited real-time analysis of your sites and competitors.
+            <strong>🔍 Verification:</strong> Use the "Verify" button to compare results with Google's PageSpeed Insights tool for any URL.
           </p>
         </div>
       </div>
