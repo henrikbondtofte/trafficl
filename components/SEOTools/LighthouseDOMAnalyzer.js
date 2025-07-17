@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Zap, Download, AlertTriangle, CheckCircle, XCircle } from 'lucide-react';
+import { Zap, Download } from 'lucide-react';
 
 export default function LighthouseDOMAnalyzer() {
   const [singleUrl, setSingleUrl] = useState('');
@@ -11,72 +11,34 @@ export default function LighthouseDOMAnalyzer() {
   const [progressText, setProgressText] = useState('');
   const [logOutput, setLogOutput] = useState('');
   const [showResults, setShowResults] = useState(false);
-  // Set your API key here - no need to enter it every time
-  const API_KEY = 'AIzaSyAF4j61pzPAjPjCjZSkbvB_0LVBm-r1lFc'; // Replace with your actual API key
-  const [apiKey, setApiKey] = useState(API_KEY);
-  const [showApiKeyInput, setShowApiKeyInput] = useState(false);
-  const [apiKeyStatus, setApiKeyStatus] = useState(API_KEY !== 'YOUR_API_KEY_HERE' ? '✅ API key ready' : '❌ Set API key in code');
-  const [isTestingApiKey, setIsTestingApiKey] = useState(false);
+  const [expandedAudits, setExpandedAudits] = useState({});
+  const [showDeveloperInsights, setShowDeveloperInsights] = useState({});
 
-  // Auto-set API status if key is provided in code
-  useEffect(() => {
-    if (API_KEY && API_KEY !== 'YOUR_API_KEY_HERE') {
-      setApiKeyStatus('✅ API key ready - you can start testing');
-    }
-  }, []);
+  // Set your API key here - replace with your actual key
+  const API_KEY = 'AIzaSyAF4j6lpzPAiPjCjZSkbvB_0LVBm-rlfTc';
+  const [apiKey, setApiKey] = useState(API_KEY);
+  const [apiKeyStatus, setApiKeyStatus] = useState('');
 
   // Google PageSpeed Insights API
   const PAGESPEED_API_BASE = 'https://www.googleapis.com/pagespeedonline/v5/runPagespeed';
 
-  const testApiKey = async () => {
-    if (!apiKey.trim()) {
-      setApiKeyStatus('❌ Please enter an API key');
-      return;
-    }
-
-    setIsTestingApiKey(true);
-    setApiKeyStatus('🔄 Testing API key...');
-
-    try {
-      const testUrl = 'https://www.google.com';
-      const apiUrl = `${PAGESPEED_API_BASE}?url=${encodeURIComponent(testUrl)}&key=${apiKey}&strategy=mobile&category=PERFORMANCE`;
-      
-      const response = await fetch(apiUrl);
-      
-      if (response.ok) {
-        setApiKeyStatus('✅ API key is valid and working!');
-      } else {
-        const errorData = await response.json();
-        setApiKeyStatus(`❌ API key error: ${errorData.error?.message || 'Invalid key'}`);
-      }
-    } catch (error) {
-      setApiKeyStatus(`❌ Test failed: ${error.message}`);
-    } finally {
-      setIsTestingApiKey(false);
-    }
-  };
-
-  const loadHeavySites = () => {
-    setBatchUrls(`https://www.cnn.com
-https://www.reddit.com
-https://www.facebook.com
-https://www.amazon.com`);
-  };
-
-  const loadOptimizedSites = () => {
-    setBatchUrls(`https://www.google.com
-https://www.wikipedia.org
-https://www.github.com`);
-  };
-
-  const loadProblemSites = () => {
-    setBatchUrls(`https://www.heavy-js-site.com
-https://www.slowsite.com
-https://www.timeout-site.com`);
-  };
-
+  // Check if API key is ready
   const isApiKeyReady = () => {
     return apiKey && apiKey !== 'YOUR_API_KEY_HERE' && apiKey.trim().length > 0;
+  };
+
+  // Auto-set API status
+  useEffect(() => {
+    if (isApiKeyReady()) {
+      setApiKeyStatus('✅ API key ready - you can start testing');
+    } else {
+      setApiKeyStatus('❌ Set API key in code');
+    }
+  }, [apiKey]);
+
+  const openGooglePageSpeed = (url) => {
+    const googleUrl = `https://pagespeed.web.dev/report?url=${encodeURIComponent(url)}`;
+    window.open(googleUrl, '_blank');
   };
 
   const runSingleTest = () => {
@@ -138,9 +100,9 @@ https://www.timeout-site.com`);
         });
       }
       
-      // Add delay to respect rate limits (Google has strict limits)
+      // Add delay to respect rate limits
       if (i < urls.length - 1) {
-        await new Promise(resolve => setTimeout(resolve, 3000)); // 3 second delay between requests
+        await new Promise(resolve => setTimeout(resolve, 3000));
       }
     }
     
@@ -183,7 +145,6 @@ https://www.timeout-site.com`);
     const apiUrl = `${PAGESPEED_API_BASE}?url=${encodeURIComponent(url)}&key=${apiKey}&strategy=${strategy}&category=PERFORMANCE&category=ACCESSIBILITY&category=BEST_PRACTICES&category=SEO`;
     
     setLogOutput(prev => prev + `\n🔄 Fetching ${strategy} data...`);
-    setLogOutput(prev => prev + `\n🔗 API URL: ${apiUrl.replace(apiKey, 'YOUR_API_KEY')}`);
     
     const response = await fetch(apiUrl);
     
@@ -196,10 +157,6 @@ https://www.timeout-site.com`);
         const errorData = await response.json();
         errorMessage = `PageSpeed API Error: ${errorData.error?.message || errorMessage}`;
         setLogOutput(prev => prev + `\n❌ API Error: ${errorData.error?.message || 'Unknown error'}`);
-        
-        if (errorData.error?.code === 400) {
-          errorMessage += '\n💡 Common fixes:\n- Check API key is valid\n- Ensure URL is accessible\n- Verify API key has PageSpeed Insights permissions';
-        }
       } catch (parseError) {
         setLogOutput(prev => prev + `\n❌ Failed to parse error response: ${parseError.message}`);
       }
@@ -255,30 +212,25 @@ https://www.timeout-site.com`);
   };
 
   const calculateDomPushErrors = (mobileMetrics, desktopMetrics) => {
-    // Look for DOM-related issues in diagnostics
     let errors = 0;
     
-    // Check for DOM size issues
     if (mobileMetrics['dom-size'] && mobileMetrics['dom-size'].numericValue > 1500) {
       errors += Math.floor(mobileMetrics['dom-size'].numericValue / 100);
     }
     
-    // Check for layout shifts
     if (mobileMetrics['cumulative-layout-shift'] && mobileMetrics['cumulative-layout-shift'].numericValue > 0.1) {
       errors += Math.floor(mobileMetrics['cumulative-layout-shift'].numericValue * 50);
     }
     
-    // Check for main thread work
     if (mobileMetrics['mainthread-work-breakdown'] && mobileMetrics['mainthread-work-breakdown'].numericValue > 4000) {
       errors += Math.floor(mobileMetrics['mainthread-work-breakdown'].numericValue / 200);
     }
     
-    // Check for render blocking resources
     if (mobileMetrics['render-blocking-resources'] && mobileMetrics['render-blocking-resources'].details) {
       errors += mobileMetrics['render-blocking-resources'].details.items?.length || 0;
     }
     
-    return Math.min(errors, 200); // Cap at 200 errors
+    return Math.min(errors, 200);
   };
 
   const extractArtifactTiming = (mobileMetrics, desktopMetrics) => {
@@ -314,7 +266,7 @@ https://www.timeout-site.com`);
     
     const totalImages = imageAudit.details.items?.length || 0;
     const problematicImages = imageAudit.details.items?.filter(item => item.wastedBytes > 10000).length || 0;
-    const skippedImages = Math.floor(problematicImages * 0.7); // Estimate skipped images
+    const skippedImages = Math.floor(problematicImages * 0.7);
     
     return {
       skipped: skippedImages,
@@ -337,16 +289,13 @@ https://www.timeout-site.com`);
   const calculateGSCImpact = (domPushErrors, artifacts, imageBudgetData) => {
     let impactScore = 0;
     
-    // DOM errors impact
     if (domPushErrors > 50) impactScore += 3;
     else if (domPushErrors > 10) impactScore += 2;
     else if (domPushErrors > 0) impactScore += 1;
     
-    // Artifact timeouts impact
     const timeoutCount = Object.values(artifacts).filter(time => time === 'timeout').length;
     impactScore += timeoutCount;
     
-    // Image budget impact
     if (imageBudgetData.fetchedPercentage < 50) impactScore += 2;
     else if (imageBudgetData.fetchedPercentage < 90) impactScore += 1;
     
@@ -358,17 +307,14 @@ https://www.timeout-site.com`);
   const generateDetailedErrors = (mobileMetrics, desktopMetrics, domPushErrors, artifacts) => {
     const errors = [];
     
-    // Add artifact timing
     Object.entries(artifacts).forEach(([key, time]) => {
       errors.push(`LH:artifacts:getArtifact ${key} +${time}`);
     });
     
-    // Add DOM errors
     if (domPushErrors > 0) {
       errors.push(`DOM.pushNodeByPathToFrontend: Node not found (x${domPushErrors})`);
     }
     
-    // Add specific audit failures
     if (mobileMetrics['render-blocking-resources'] && mobileMetrics['render-blocking-resources'].score < 0.9) {
       errors.push('LH:audit:render-blocking-resources Failed');
     }
@@ -397,48 +343,6 @@ https://www.timeout-site.com`);
       .map(([key]) => key);
   };
 
-  const clearResults = () => {
-    setTestResults([]);
-    setShowResults(false);
-    setIsRunning(false);
-    setLogOutput('');
-    setSingleUrl('');
-    setBatchUrls('');
-  };
-
-  const exportResults = () => {
-    if (testResults.length === 0) {
-      alert('No results to export');
-      return;
-    }
-
-    const csvData = [
-      ['URL', 'Overall Status', 'DOM Push Errors', 'GlobalListeners', 'ImageElements', 'GSC Impact', 'Mobile Score', 'Desktop Score', 'Page Load Timeout', 'Detailed Errors'],
-      ...testResults.map(result => [
-        result.url,
-        result.renderingScore,
-        result.domPushErrors,
-        result.artifacts?.globalListeners || 'N/A',
-        result.artifacts?.imageElements || 'N/A',
-        result.gscImpact,
-        result.mobileScore || 'N/A',
-        result.desktopScore || 'N/A',
-        result.pageLoadTimeout ? 'Yes' : 'No',
-        result.detailedErrors?.join(';') || 'No errors'
-      ])
-    ];
-
-    const csvContent = csvData.map(row => row.map(cell => `"${cell}"`).join(',')).join('\n');
-    
-    const blob = new Blob([csvContent], { type: 'text/csv' });
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `lighthouse-dom-analysis-${new Date().toISOString().slice(0, 10)}.csv`;
-    a.click();
-    window.URL.revokeObjectURL(url);
-  };
-
   const toggleDetails = (index) => {
     const panel = document.getElementById('details-' + index);
     if (panel) {
@@ -459,11 +363,6 @@ https://www.timeout-site.com`);
       ...prev,
       [resultIndex]: !prev[resultIndex]
     }));
-  };
-
-  const openGooglePageSpeed = (url) => {
-    const googleUrl = `https://pagespeed.web.dev/report?url=${encodeURIComponent(url)}`;
-    window.open(googleUrl, '_blank');
   };
 
   const generateDeveloperReport = (result) => {
@@ -513,23 +412,6 @@ https://www.timeout-site.com`);
       });
     }
     
-    if (result.artifacts?.globalListeners && result.artifacts.globalListeners !== 'N/A') {
-      const time = parseInt(result.artifacts.globalListeners);
-      if (time > 50) {
-        issues.push({
-          type: 'Heavy Event Listeners',
-          severity: 'medium',
-          description: 'Event listeners are taking too long to process',
-          solutions: [
-            'Optimize event handler functions',
-            'Use event delegation instead of multiple listeners',
-            'Consider debouncing for frequent events',
-            'Remove unused event listeners'
-          ]
-        });
-      }
-    }
-    
     return issues;
   };
 
@@ -554,6 +436,45 @@ https://www.timeout-site.com`);
     const a = document.createElement('a');
     a.href = url;
     a.download = `developer-report-${new Date().toISOString().split('T')[0]}.json`;
+    a.click();
+    window.URL.revokeObjectURL(url);
+  };
+
+  const clearResults = () => {
+    setTestResults([]);
+    setShowResults(false);
+    setIsRunning(false);
+    setLogOutput('');
+    setSingleUrl('');
+    setBatchUrls('');
+  };
+
+  const exportResults = () => {
+    if (testResults.length === 0) {
+      alert('No results to export');
+      return;
+    }
+
+    const csvData = [
+      ['URL', 'Overall Status', 'DOM Push Errors', 'Mobile Score', 'Desktop Score', 'GSC Impact', 'Page Load Timeout'],
+      ...testResults.map(result => [
+        result.url,
+        result.renderingScore,
+        result.domPushErrors,
+        result.mobileScore || 'N/A',
+        result.desktopScore || 'N/A',
+        result.gscImpact,
+        result.pageLoadTimeout ? 'Yes' : 'No'
+      ])
+    ];
+
+    const csvContent = csvData.map(row => row.map(cell => `"${cell}"`).join(',')).join('\n');
+    
+    const blob = new Blob([csvContent], { type: 'text/csv' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `lighthouse-dom-analysis-${new Date().toISOString().slice(0, 10)}.csv`;
     a.click();
     window.URL.revokeObjectURL(url);
   };
@@ -587,7 +508,7 @@ https://www.github.com`);
             Lighthouse DOM Rendering Analyzer
           </h1>
           <p className="text-lg text-gray-600">
-            Real-time technical SEO analysis using Google PageSpeed Insights API
+            Technical SEO analysis using Google PageSpeed Insights API
           </p>
         </div>
 
@@ -603,7 +524,7 @@ https://www.github.com`);
           </p>
         </div>
 
-        {/* API Key Status - Simplified when set in code */}
+        {/* API Key Status */}
         {isApiKeyReady() ? (
           <div className="bg-green-50 border border-green-200 rounded-lg p-4 mb-8">
             <div className="flex items-center gap-3">
@@ -649,13 +570,6 @@ https://www.github.com`);
               className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:border-purple-500 focus:outline-none text-lg min-h-32 resize-vertical"
               placeholder="Enter URLs - one per line"
             />
-            
-            <div className="mt-3 text-sm text-gray-600">
-              <strong>Quick test examples:</strong>
-              <button onClick={loadHeavySites} className="ml-3 text-purple-600 hover:text-purple-800 underline">Heavy Sites</button>
-              <button onClick={loadOptimizedSites} className="ml-3 text-purple-600 hover:text-purple-800 underline">Optimized Sites</button>
-              <button onClick={loadProblemSites} className="ml-3 text-purple-600 hover:text-purple-800 underline">Problem Sites</button>
-            </div>
           </div>
         </div>
 
@@ -694,7 +608,7 @@ https://www.github.com`);
 
         {isRunning && (
           <div className="bg-white border rounded-lg p-6 mb-8">
-            <h3 className="text-xl font-bold mb-4">⏳ Real Lighthouse analysis in progress...</h3>
+            <h3 className="text-xl font-bold mb-4">⏳ Lighthouse analysis in progress...</h3>
             <div className="w-full bg-gray-200 rounded-full h-2 mb-4">
               <div 
                 className="bg-purple-600 h-2 rounded-full transition-all duration-300"
@@ -747,7 +661,7 @@ https://www.github.com`);
                       <th className="px-4 py-3 text-left font-semibold">Mobile</th>
                       <th className="px-4 py-3 text-left font-semibold">Desktop</th>
                       <th className="px-4 py-3 text-left font-semibold">GSC Impact</th>
-                      <th className="px-4 py-3 text-left font-semibold">Details</th>
+                      <th className="px-4 py-3 text-left font-semibold">Actions</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -880,13 +794,6 @@ https://www.github.com`);
                                               <strong className="text-red-600">Slow LCP:</strong>
                                               <p className="mt-1">The largest content element takes too long to load (>2.5s).</p>
                                               <p className="mt-1"><strong>Impact:</strong> Directly affects Google rankings and user experience.</p>
-                                            </div>
-                                          )}
-                                          {error.includes('globalListeners') && (
-                                            <div>
-                                              <strong className="text-blue-600">Event Listeners:</strong>
-                                              <p className="mt-1">Time spent processing JavaScript event listeners.</p>
-                                              <p className="mt-1"><strong>Impact:</strong> High values can block main thread and affect interactivity.</p>
                                             </div>
                                           )}
                                         </div>
