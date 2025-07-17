@@ -56,7 +56,7 @@ https://www.timeout-site.com`);
       return;
     }
     if (!apiKey.trim()) {
-      alert('Please enter your Google PageSpeed API key');
+      alert('AIzaSyAF4j61pzPAjPjCjZSkbvB_0LVBm-r1lFc');
       setShowApiKeyInput(true);
       return;
     }
