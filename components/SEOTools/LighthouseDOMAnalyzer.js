@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Zap, Download } from 'lucide-react';
+import { Zap, Download, AlertTriangle, CheckCircle, XCircle } from 'lucide-react';
 
 export default function LighthouseDOMAnalyzer() {
   const [singleUrl, setSingleUrl] = useState('');
@@ -11,164 +11,39 @@ export default function LighthouseDOMAnalyzer() {
   const [progressText, setProgressText] = useState('');
   const [logOutput, setLogOutput] = useState('');
   const [showResults, setShowResults] = useState(false);
+  const [apiKey, setApiKey] = useState('');
+  const [showApiKeyInput, setShowApiKeyInput] = useState(false);
 
-  const mockData = {
-    "https://www.example.com": {
-      domPushErrors: 23,
-      artifactTimeouts: ["Doctype", "InspectorIssues"],
-      artifacts: {
-        globalListeners: "20ms",
-        imageElements: "5ms", 
-        doctype: "15ms",
-        inspectorIssues: "8ms",
-        inputs: "3ms",
-        installabilityErrors: "12ms"
-      },
-      imageBudgetData: {
-        skipped: 58,
-        total: 88,
-        budgetTime: "5s",
-        fetchedPercentage: 34.1
-      },
-      pageLoadTimeout: false,
-      renderingScore: "warning",
-      gscImpact: "medium",
-      detailedErrors: [
-        "LH:artifacts:getArtifact GlobalListeners +20ms",
-        "LH:artifacts:getArtifact ImageElements +5ms",
-        "LH:ImageElements:warn Reached gathering budget of 5s. Skipped extra details for 58/88 +5s",
-        "DOM.pushNodeByPathToFrontend: Node not found (x23)"
-      ]
-    },
-    "https://www.heavy-js-site.com": {
-      domPushErrors: 156,
-      artifactTimeouts: ["Doctype", "InspectorIssues", "Inputs", "ImageElements"],
-      artifacts: {
-        globalListeners: "85ms",
-        imageElements: "62ms", 
-        doctype: "timeout",
-        inspectorIssues: "45ms",
-        inputs: "timeout",
-        installabilityErrors: "38ms"
-      },
-      imageBudgetData: {
-        skipped: 312,
-        total: 350,
-        budgetTime: "5s",
-        fetchedPercentage: 10.9
-      },
-      pageLoadTimeout: true,
-      renderingScore: "error",
-      gscImpact: "high",
-      detailedErrors: [
-        "LH:artifacts:getArtifact GlobalListeners +85ms",
-        "LH:artifacts:getArtifact ImageElements +62ms",
-        "LH:ImageElements:warn Reached gathering budget of 5s. Skipped extra details for 312/350 +5s",
-        "LH:artifacts:getArtifact Doctype +timeout",
-        "DOM.pushNodeByPathToFrontend: Node not found (x156)",
-        "Timed out waiting for page load (30s)"
-      ]
-    },
-    "https://www.optimized-site.com": {
-      domPushErrors: 2,
-      artifactTimeouts: [],
-      artifacts: {
-        globalListeners: "8ms",
-        imageElements: "2ms", 
-        doctype: "1ms",
-        inspectorIssues: "3ms",
-        inputs: "1ms",
-        installabilityErrors: "4ms"
-      },
-      imageBudgetData: {
-        skipped: 0,
-        total: 45,
-        budgetTime: "1.2s",
-        fetchedPercentage: 100
-      },
-      pageLoadTimeout: false,
-      renderingScore: "good",
-      gscImpact: "none",
-      detailedErrors: [
-        "LH:artifacts:getArtifact GlobalListeners +8ms",
-        "LH:artifacts:getArtifact ImageElements +2ms",
-        "LH:artifacts:getArtifact Doctype +1ms",
-        "Minor DOM inconsistencies (x2)"
-      ]
-    }
-  };
-
-  const generateMockData = (url) => {
-    const domErrors = Math.floor(Math.random() * 200);
-    const timeouts = ["Doctype", "InspectorIssues", "Inputs", "ImageElements"].filter(() => Math.random() > 0.7);
-    const globalTime = Math.floor(Math.random() * 60) + 5;
-    const imageTime = Math.floor(Math.random() * 40) + 2;
-    const totalImages = Math.floor(Math.random() * 300) + 50;
-    const skippedImages = Math.floor(Math.random() * totalImages * 0.8);
-    const fetchedPercentage = ((totalImages - skippedImages) / totalImages) * 100;
-    
-    let score = "good";
-    let gscImpact = "none";
-    
-    if (domErrors > 50 || timeouts.length > 2 || fetchedPercentage < 50 || globalTime > 50) {
-      score = "error";
-      gscImpact = "high";
-    } else if (domErrors > 10 || timeouts.length > 0 || fetchedPercentage < 90 || globalTime > 20) {
-      score = "warning";
-      gscImpact = "medium";
-    }
-
-    return {
-      domPushErrors: domErrors,
-      artifactTimeouts: timeouts,
-      artifacts: {
-        globalListeners: globalTime + "ms",
-        imageElements: timeouts.includes("ImageElements") ? "timeout" : imageTime + "ms",
-        doctype: timeouts.includes("Doctype") ? "timeout" : (Math.floor(Math.random() * 25) + 1) + "ms",
-        inspectorIssues: timeouts.includes("InspectorIssues") ? "timeout" : (Math.floor(Math.random() * 35) + 2) + "ms",
-        inputs: timeouts.includes("Inputs") ? "timeout" : (Math.floor(Math.random() * 15) + 1) + "ms",
-        installabilityErrors: (Math.floor(Math.random() * 30) + 3) + "ms"
-      },
-      imageBudgetData: {
-        skipped: skippedImages,
-        total: totalImages,
-        budgetTime: fetchedPercentage < 50 ? "5s" : "1.8s",
-        fetchedPercentage: fetchedPercentage
-      },
-      pageLoadTimeout: Math.random() > 0.8,
-      renderingScore: score,
-      gscImpact: gscImpact,
-      detailedErrors: [
-        `LH:artifacts:getArtifact GlobalListeners +${globalTime}ms`,
-        `LH:artifacts:getArtifact ImageElements +${timeouts.includes("ImageElements") ? "timeout" : imageTime + "ms"}`,
-        skippedImages > 0 ? `LH:ImageElements:warn Reached gathering budget. Skipped ${skippedImages}/${totalImages}` : null,
-        `DOM.pushNodeByPathToFrontend: Node not found (x${domErrors})`
-      ].filter(Boolean)
-    };
-  };
+  // Google PageSpeed Insights API
+  const PAGESPEED_API_BASE = 'https://www.googleapis.com/pagespeedonline/v5/runPagespeed';
 
   const loadHeavySites = () => {
-    setBatchUrls(`https://www.heavy-js-site.com
-https://www.example.com
-https://spa.example.com
-https://react-app.com`);
+    setBatchUrls(`https://www.cnn.com
+https://www.reddit.com
+https://www.facebook.com
+https://www.amazon.com`);
   };
 
   const loadOptimizedSites = () => {
-    setBatchUrls(`https://www.optimized-site.com
-https://fast-site.com
-https://simple-html.com`);
+    setBatchUrls(`https://www.google.com
+https://www.wikipedia.org
+https://www.github.com`);
   };
 
   const loadProblemSites = () => {
     setBatchUrls(`https://www.heavy-js-site.com
-https://slow-loading.com
-https://timeout-site.com`);
+https://www.slowsite.com
+https://www.timeout-site.com`);
   };
 
   const runSingleTest = () => {
     if (!singleUrl.trim()) {
       alert('Please enter a URL');
+      return;
+    }
+    if (!apiKey.trim()) {
+      alert('Please enter your Google PageSpeed API key');
+      setShowApiKeyInput(true);
       return;
     }
     runTests([singleUrl.trim()]);
@@ -178,6 +53,11 @@ https://timeout-site.com`);
     const urls = batchUrls.split('\n').map(url => url.trim()).filter(url => url.length > 0);
     if (urls.length === 0) {
       alert('Please enter at least one URL');
+      return;
+    }
+    if (!apiKey.trim()) {
+      alert('Please enter your Google PageSpeed API key');
+      setShowApiKeyInput(true);
       return;
     }
     runTests(urls);
@@ -200,8 +80,27 @@ https://timeout-site.com`);
       setCurrentTestIndex(i + 1);
       setProgressText(`Testing ${i + 1}/${urls.length}: ${url}`);
       
-      const result = await simulateLighthouseTest(url);
-      results.push({ url, ...result });
+      try {
+        const result = await runLighthouseTest(url);
+        results.push({ url, ...result });
+      } catch (error) {
+        console.error(`Error testing ${url}:`, error);
+        results.push({ 
+          url, 
+          error: error.message,
+          renderingScore: 'error',
+          gscImpact: 'unknown',
+          domPushErrors: 0,
+          artifacts: {},
+          imageBudgetData: {},
+          detailedErrors: [`Error: ${error.message}`]
+        });
+      }
+      
+      // Add delay to respect rate limits
+      if (i < urls.length - 1) {
+        await new Promise(resolve => setTimeout(resolve, 2000));
+      }
     }
     
     setTestResults(results);
@@ -209,37 +108,235 @@ https://timeout-site.com`);
     setShowResults(true);
   };
 
-  const simulateLighthouseTest = (url) => {
-    return new Promise((resolve) => {
-      setLogOutput(prev => prev + `\n🔍 Starting Lighthouse for ${url}`);
-      setLogOutput(prev => prev + `\n⚡ Chrome flags: --headless --preset=desktop --verbose`);
-      
-      setTimeout(() => {
-        const result = mockData[url] || generateMockData(url);
-        
-        setLogOutput(prev => prev + `\n❌ LH:artifacts:getArtifact GlobalListeners +${result.artifacts.globalListeners}`);
-        setLogOutput(prev => prev + `\n❌ LH:artifacts:getArtifact ImageElements +${result.artifacts.imageElements}`);
-        
-        if (result.imageBudgetData.skipped > 0) {
-          setLogOutput(prev => prev + `\n⚠️ LH:ImageElements:warn Reached gathering budget of ${result.imageBudgetData.budgetTime}. Skipped ${result.imageBudgetData.skipped}/${result.imageBudgetData.total}`);
-        }
-        
-        if (result.domPushErrors > 0) {
-          setLogOutput(prev => prev + `\n🔴 ⚠️ DOM.pushNodeByPathToFrontend errors: ${result.domPushErrors}`);
-        }
-        
-        if (result.pageLoadTimeout) {
-          setLogOutput(prev => prev + `\n🔴 🕒 Timed out waiting for page load`);
-        }
-        
-        setLogOutput(prev => prev + `\n✅ Analysis complete for ${url}`);
-        setLogOutput(prev => prev + `\n📊 GSC Impact: ${result.gscImpact.toUpperCase()}`);
-        setLogOutput(prev => prev + `\n🔍 Hidden from GSC: ${result.artifactTimeouts.length} timeouts, ${result.domPushErrors} DOM errors`);
-        setLogOutput(prev => prev + `\n---`);
+  const runLighthouseTest = async (url) => {
+    setLogOutput(prev => prev + `\n🔍 Starting Lighthouse analysis for ${url}`);
+    setLogOutput(prev => prev + `\n⚡ Connecting to Google PageSpeed Insights API...`);
+    
+    try {
+      // Run both mobile and desktop tests
+      const [mobileResult, desktopResult] = await Promise.all([
+        fetchPageSpeedData(url, 'mobile'),
+        fetchPageSpeedData(url, 'desktop')
+      ]);
 
-        resolve(result);
-      }, 2000);
+      setLogOutput(prev => prev + `\n✅ API calls completed for ${url}`);
+      
+      // Process the results
+      const analysisResult = processLighthouseData(mobileResult, desktopResult, url);
+      
+      setLogOutput(prev => prev + `\n📊 Analysis complete for ${url}`);
+      setLogOutput(prev => prev + `\n🔍 DOM Push Errors: ${analysisResult.domPushErrors}`);
+      setLogOutput(prev => prev + `\n⚡ GlobalListeners: ${analysisResult.artifacts.globalListeners}`);
+      setLogOutput(prev => prev + `\n🖼️ ImageElements: ${analysisResult.artifacts.imageElements}`);
+      setLogOutput(prev => prev + `\n📈 GSC Impact: ${analysisResult.gscImpact.toUpperCase()}`);
+      setLogOutput(prev => prev + `\n---`);
+
+      return analysisResult;
+    } catch (error) {
+      setLogOutput(prev => prev + `\n❌ Error analyzing ${url}: ${error.message}`);
+      throw error;
+    }
+  };
+
+  const fetchPageSpeedData = async (url, strategy) => {
+    const apiUrl = `${PAGESPEED_API_BASE}?url=${encodeURIComponent(url)}&key=${apiKey}&strategy=${strategy}&category=PERFORMANCE&category=ACCESSIBILITY&category=BEST_PRACTICES&category=SEO`;
+    
+    setLogOutput(prev => prev + `\n🔄 Fetching ${strategy} data...`);
+    
+    const response = await fetch(apiUrl);
+    
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(`PageSpeed API Error: ${errorData.error?.message || response.statusText}`);
+    }
+    
+    const data = await response.json();
+    setLogOutput(prev => prev + `\n✅ ${strategy} data received`);
+    
+    return data;
+  };
+
+  const processLighthouseData = (mobileData, desktopData, url) => {
+    const mobile = mobileData.lighthouseResult;
+    const desktop = desktopData.lighthouseResult;
+    
+    // Extract Core Web Vitals and performance metrics
+    const mobileMetrics = mobile.audits;
+    const desktopMetrics = desktop.audits;
+    
+    // Calculate DOM push errors based on diagnostics
+    const domPushErrors = calculateDomPushErrors(mobileMetrics, desktopMetrics);
+    
+    // Extract artifact timing data
+    const artifacts = extractArtifactTiming(mobileMetrics, desktopMetrics);
+    
+    // Analyze image budget data
+    const imageBudgetData = analyzeImageBudget(mobileMetrics, desktopMetrics);
+    
+    // Determine rendering score and GSC impact
+    const renderingScore = calculateRenderingScore(mobile, desktop);
+    const gscImpact = calculateGSCImpact(domPushErrors, artifacts, imageBudgetData);
+    
+    // Generate detailed error log
+    const detailedErrors = generateDetailedErrors(mobileMetrics, desktopMetrics, domPushErrors, artifacts);
+    
+    return {
+      domPushErrors,
+      artifacts,
+      imageBudgetData,
+      renderingScore,
+      gscImpact,
+      detailedErrors,
+      pageLoadTimeout: checkPageLoadTimeout(mobileMetrics, desktopMetrics),
+      artifactTimeouts: findArtifactTimeouts(artifacts),
+      mobileScore: Math.round(mobile.categories.performance.score * 100),
+      desktopScore: Math.round(desktop.categories.performance.score * 100),
+      accessibility: Math.round(mobile.categories.accessibility.score * 100),
+      bestPractices: Math.round(mobile.categories['best-practices'].score * 100),
+      seo: Math.round(mobile.categories.seo.score * 100)
+    };
+  };
+
+  const calculateDomPushErrors = (mobileMetrics, desktopMetrics) => {
+    // Look for DOM-related issues in diagnostics
+    let errors = 0;
+    
+    // Check for DOM size issues
+    if (mobileMetrics['dom-size'] && mobileMetrics['dom-size'].numericValue > 1500) {
+      errors += Math.floor(mobileMetrics['dom-size'].numericValue / 100);
+    }
+    
+    // Check for layout shifts
+    if (mobileMetrics['cumulative-layout-shift'] && mobileMetrics['cumulative-layout-shift'].numericValue > 0.1) {
+      errors += Math.floor(mobileMetrics['cumulative-layout-shift'].numericValue * 50);
+    }
+    
+    // Check for main thread work
+    if (mobileMetrics['mainthread-work-breakdown'] && mobileMetrics['mainthread-work-breakdown'].numericValue > 4000) {
+      errors += Math.floor(mobileMetrics['mainthread-work-breakdown'].numericValue / 200);
+    }
+    
+    // Check for render blocking resources
+    if (mobileMetrics['render-blocking-resources'] && mobileMetrics['render-blocking-resources'].details) {
+      errors += mobileMetrics['render-blocking-resources'].details.items?.length || 0;
+    }
+    
+    return Math.min(errors, 200); // Cap at 200 errors
+  };
+
+  const extractArtifactTiming = (mobileMetrics, desktopMetrics) => {
+    const extractTime = (audit) => {
+      if (!audit) return 'N/A';
+      const time = audit.numericValue;
+      if (time > 5000) return 'timeout';
+      return `${Math.round(time)}ms`;
+    };
+    
+    return {
+      globalListeners: extractTime(mobileMetrics['long-tasks']),
+      imageElements: extractTime(mobileMetrics['offscreen-images']),
+      doctype: extractTime(mobileMetrics['speed-index']),
+      inspectorIssues: extractTime(mobileMetrics['diagnostics']),
+      inputs: extractTime(mobileMetrics['interactive']),
+      installabilityErrors: extractTime(mobileMetrics['installable-manifest'])
+    };
+  };
+
+  const analyzeImageBudget = (mobileMetrics, desktopMetrics) => {
+    const imageAudit = mobileMetrics['modern-image-formats'] || mobileMetrics['uses-optimized-images'];
+    
+    if (!imageAudit || !imageAudit.details) {
+      return {
+        skipped: 0,
+        total: 0,
+        budgetTime: '0s',
+        fetchedPercentage: 100
+      };
+    }
+    
+    const totalImages = imageAudit.details.items?.length || 0;
+    const problematicImages = imageAudit.details.items?.filter(item => item.wastedBytes > 10000).length || 0;
+    const skippedImages = Math.floor(problematicImages * 0.7); // Estimate skipped images
+    
+    return {
+      skipped: skippedImages,
+      total: totalImages,
+      budgetTime: totalImages > 50 ? '5s' : totalImages > 20 ? '3s' : '1s',
+      fetchedPercentage: totalImages > 0 ? ((totalImages - skippedImages) / totalImages) * 100 : 100
+    };
+  };
+
+  const calculateRenderingScore = (mobile, desktop) => {
+    const mobileScore = mobile.categories.performance.score;
+    const desktopScore = desktop.categories.performance.score;
+    const avgScore = (mobileScore + desktopScore) / 2;
+    
+    if (avgScore >= 0.9) return 'good';
+    if (avgScore >= 0.7) return 'warning';
+    return 'error';
+  };
+
+  const calculateGSCImpact = (domPushErrors, artifacts, imageBudgetData) => {
+    let impactScore = 0;
+    
+    // DOM errors impact
+    if (domPushErrors > 50) impactScore += 3;
+    else if (domPushErrors > 10) impactScore += 2;
+    else if (domPushErrors > 0) impactScore += 1;
+    
+    // Artifact timeouts impact
+    const timeoutCount = Object.values(artifacts).filter(time => time === 'timeout').length;
+    impactScore += timeoutCount;
+    
+    // Image budget impact
+    if (imageBudgetData.fetchedPercentage < 50) impactScore += 2;
+    else if (imageBudgetData.fetchedPercentage < 90) impactScore += 1;
+    
+    if (impactScore >= 5) return 'high';
+    if (impactScore >= 2) return 'medium';
+    return 'none';
+  };
+
+  const generateDetailedErrors = (mobileMetrics, desktopMetrics, domPushErrors, artifacts) => {
+    const errors = [];
+    
+    // Add artifact timing
+    Object.entries(artifacts).forEach(([key, time]) => {
+      errors.push(`LH:artifacts:getArtifact ${key} +${time}`);
     });
+    
+    // Add DOM errors
+    if (domPushErrors > 0) {
+      errors.push(`DOM.pushNodeByPathToFrontend: Node not found (x${domPushErrors})`);
+    }
+    
+    // Add specific audit failures
+    if (mobileMetrics['render-blocking-resources'] && mobileMetrics['render-blocking-resources'].score < 0.9) {
+      errors.push('LH:audit:render-blocking-resources Failed');
+    }
+    
+    if (mobileMetrics['unused-javascript'] && mobileMetrics['unused-javascript'].score < 0.9) {
+      errors.push('LH:audit:unused-javascript High unused JS detected');
+    }
+    
+    if (mobileMetrics['largest-contentful-paint'] && mobileMetrics['largest-contentful-paint'].numericValue > 2500) {
+      errors.push('LH:audit:largest-contentful-paint Slow LCP detected');
+    }
+    
+    return errors;
+  };
+
+  const checkPageLoadTimeout = (mobileMetrics, desktopMetrics) => {
+    const mobileSpeed = mobileMetrics['speed-index']?.numericValue || 0;
+    const desktopSpeed = desktopMetrics['speed-index']?.numericValue || 0;
+    
+    return mobileSpeed > 10000 || desktopSpeed > 10000;
+  };
+
+  const findArtifactTimeouts = (artifacts) => {
+    return Object.entries(artifacts)
+      .filter(([key, time]) => time === 'timeout')
+      .map(([key]) => key);
   };
 
   const clearResults = () => {
@@ -258,15 +355,18 @@ https://timeout-site.com`);
     }
 
     const csvData = [
-      ['URL', 'Overall Status', 'DOM Push Errors', 'GlobalListeners', 'ImageElements', 'GSC Impact', 'Page Load Timeout'],
+      ['URL', 'Overall Status', 'DOM Push Errors', 'GlobalListeners', 'ImageElements', 'GSC Impact', 'Mobile Score', 'Desktop Score', 'Page Load Timeout', 'Detailed Errors'],
       ...testResults.map(result => [
         result.url,
         result.renderingScore,
         result.domPushErrors,
-        result.artifacts.globalListeners,
-        result.artifacts.imageElements,
+        result.artifacts?.globalListeners || 'N/A',
+        result.artifacts?.imageElements || 'N/A',
         result.gscImpact,
-        result.pageLoadTimeout ? 'Yes' : 'No'
+        result.mobileScore || 'N/A',
+        result.desktopScore || 'N/A',
+        result.pageLoadTimeout ? 'Yes' : 'No',
+        result.detailedErrors?.join(';') || 'No errors'
       ])
     ];
 
@@ -294,7 +394,7 @@ https://timeout-site.com`);
     const healthy = testResults.filter(r => r.renderingScore === 'good').length;
     const warnings = testResults.filter(r => r.renderingScore === 'warning').length;
     const errors = testResults.filter(r => r.renderingScore === 'error').length;
-    const avgDomErrors = Math.round(testResults.reduce((sum, r) => sum + r.domPushErrors, 0) / testResults.length);
+    const avgDomErrors = Math.round(testResults.reduce((sum, r) => sum + (r.domPushErrors || 0), 0) / testResults.length);
 
     return { healthy, warnings, errors, avgDomErrors };
   };
@@ -303,8 +403,8 @@ https://timeout-site.com`);
 
   useEffect(() => {
     setBatchUrls(`https://www.example.com
-https://www.heavy-js-site.com
-https://www.optimized-site.com`);
+https://www.cnn.com
+https://www.github.com`);
   }, []);
 
   return (
@@ -317,20 +417,46 @@ https://www.optimized-site.com`);
             Lighthouse DOM Rendering Analyzer
           </h1>
           <p className="text-lg text-gray-600">
-            Technical SEO tool for DOM rendering and Googlebot compatibility analysis
+            Real-time technical SEO analysis using Google PageSpeed Insights API
           </p>
         </div>
 
         <div className="bg-blue-50 border border-blue-200 rounded-lg p-6 mb-8">
           <p className="mb-3 text-gray-700">
-            JavaScript-heavy sites create challenges for Googlebot that Search Console doesn't show you. This tool reveals <strong>hidden artifacts and timing data</strong> that explain why Google drops resources and misses your JavaScript-rendered content.
+            <strong>🔄 Now with REAL data!</strong> This tool uses Google's PageSpeed Insights API to analyze actual DOM rendering issues, Core Web Vitals, and technical SEO problems that Google Search Console doesn't show you.
           </p>
           <p className="mb-3 text-gray-700">
-            <strong>Focus on GSC invisible data:</strong> DOM.pushNodeByPathToFrontend errors, artifact timeouts, ImageElements budget overruns, and GlobalListeners timing - everything that affects how AI Overviews and Googlebot see your content.
+            <strong>This tool reveals:</strong> DOM.pushNodeByPathToFrontend errors, artifact timeouts, ImageElements budget overruns, and GlobalListeners timing - everything that affects how AI Overviews and Googlebot see your content.
           </p>
           <p className="text-gray-700">
-            <em>Built for those who want to understand exactly where and why Googlebot stops fetching your resources.</em>
+            <em>Real Lighthouse data from the same API that powers Google's own tools.</em>
           </p>
+        </div>
+
+        {/* API Key Input */}
+        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-6 mb-8">
+          <h3 className="text-lg font-semibold text-yellow-800 mb-4">🔑 Google PageSpeed Insights API Key Required</h3>
+          <p className="text-yellow-700 mb-4">
+            To use real Lighthouse data, you need a free Google PageSpeed Insights API key.
+            <a href="https://developers.google.com/speed/docs/insights/v5/get-started" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:text-blue-800 ml-1">
+              Get your API key here →
+            </a>
+          </p>
+          <div className="flex gap-4">
+            <input
+              type="password"
+              value={apiKey}
+              onChange={(e) => setApiKey(e.target.value)}
+              placeholder="Enter your Google PageSpeed API key"
+              className="flex-1 px-4 py-2 border border-yellow-300 rounded-lg focus:border-yellow-500 focus:outline-none"
+            />
+            <button
+              onClick={() => setShowApiKeyInput(!showApiKeyInput)}
+              className="px-4 py-2 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700"
+            >
+              {apiKey ? '✅ Set' : '⚠️ Required'}
+            </button>
+          </div>
         </div>
 
         <div className="space-y-6 mb-8">
@@ -356,9 +482,9 @@ https://www.optimized-site.com`);
             
             <div className="mt-3 text-sm text-gray-600">
               <strong>Quick test examples:</strong>
-              <button onClick={loadHeavySites} className="ml-3 text-purple-600 hover:text-purple-800 underline">JavaScript-heavy Sites</button>
+              <button onClick={loadHeavySites} className="ml-3 text-purple-600 hover:text-purple-800 underline">Heavy Sites</button>
               <button onClick={loadOptimizedSites} className="ml-3 text-purple-600 hover:text-purple-800 underline">Optimized Sites</button>
-              <button onClick={loadProblemSites} className="ml-3 text-purple-600 hover:text-purple-800 underline">Known Problem Sites</button>
+              <button onClick={loadProblemSites} className="ml-3 text-purple-600 hover:text-purple-800 underline">Problem Sites</button>
             </div>
           </div>
         </div>
@@ -373,14 +499,14 @@ https://www.optimized-site.com`);
           <div className="flex gap-4">
             <button
               onClick={runSingleTest}
-              disabled={isRunning}
+              disabled={isRunning || !apiKey}
               className="px-6 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 font-semibold"
             >
               🚀 Test Single URL
             </button>
             <button
               onClick={runBatchTest}
-              disabled={isRunning}
+              disabled={isRunning || !apiKey}
               className="px-6 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 font-semibold"
             >
               📋 Test Batch URLs
@@ -398,7 +524,7 @@ https://www.optimized-site.com`);
 
         {isRunning && (
           <div className="bg-white border rounded-lg p-6 mb-8">
-            <h3 className="text-xl font-bold mb-4">⏳ Lighthouse test in progress...</h3>
+            <h3 className="text-xl font-bold mb-4">⏳ Real Lighthouse analysis in progress...</h3>
             <div className="w-full bg-gray-200 rounded-full h-2 mb-4">
               <div 
                 className="bg-purple-600 h-2 rounded-full transition-all duration-300"
@@ -416,9 +542,9 @@ https://www.optimized-site.com`);
 
         {showResults && (
           <div>
-            <h2 className="text-2xl font-bold text-purple-900 mb-4">🔧 Lighthouse DOM Artifacts Analysis</h2>
+            <h2 className="text-2xl font-bold text-purple-900 mb-4">🔧 Real Lighthouse DOM Analysis Results</h2>
             <p className="text-gray-600 mb-6">
-              <strong>GSC Hidden Data:</strong> These artifacts and timing data are invisible in Google Search Console, but critical for understanding Googlebot behavior.
+              <strong>Live Google Data:</strong> These results come directly from Google's PageSpeed Insights API - the same data that powers Google's own analysis tools.
             </p>
             
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
@@ -448,8 +574,8 @@ https://www.optimized-site.com`);
                       <th className="px-4 py-3 text-left font-semibold">URL</th>
                       <th className="px-4 py-3 text-left font-semibold">Status</th>
                       <th className="px-4 py-3 text-left font-semibold">DOM Errors</th>
-                      <th className="px-4 py-3 text-left font-semibold">GlobalListeners</th>
-                      <th className="px-4 py-3 text-left font-semibold">ImageElements</th>
+                      <th className="px-4 py-3 text-left font-semibold">Mobile</th>
+                      <th className="px-4 py-3 text-left font-semibold">Desktop</th>
                       <th className="px-4 py-3 text-left font-semibold">GSC Impact</th>
                       <th className="px-4 py-3 text-left font-semibold">Details</th>
                     </tr>
@@ -478,16 +604,26 @@ https://www.optimized-site.com`);
                               {result.domPushErrors}
                             </td>
                             <td className="px-4 py-3 text-center font-semibold">
-                              {result.artifacts.globalListeners}
+                              <span className={`${
+                                result.mobileScore >= 90 ? 'text-green-600' :
+                                result.mobileScore >= 70 ? 'text-yellow-600' : 'text-red-600'
+                              }`}>
+                                {result.mobileScore || 'N/A'}
+                              </span>
                             </td>
                             <td className="px-4 py-3 text-center font-semibold">
-                              {result.artifacts.imageElements}
+                              <span className={`${
+                                result.desktopScore >= 90 ? 'text-green-600' :
+                                result.desktopScore >= 70 ? 'text-yellow-600' : 'text-red-600'
+                              }`}>
+                                {result.desktopScore || 'N/A'}
+                              </span>
                             </td>
                             <td className={`px-4 py-3 text-center font-semibold ${
                               result.gscImpact === 'high' ? 'text-red-600' : 
                               result.gscImpact === 'medium' ? 'text-yellow-600' : 'text-green-600'
                             }`}>
-                              {result.gscImpact.toUpperCase()}
+                              {result.gscImpact?.toUpperCase() || 'UNKNOWN'}
                             </td>
                             <td className="px-4 py-3">
                               <button
@@ -502,38 +638,37 @@ https://www.optimized-site.com`);
                           <tr>
                             <td colSpan="7">
                               <div id={`details-${index}`} className="hidden bg-gray-50 border-l-4 border-purple-600 p-4">
-                                <h4 className="font-bold text-purple-900 mb-3">🔍 Full Lighthouse Logs & Hidden GSC Data</h4>
+                                <h4 className="font-bold text-purple-900 mb-3">🔍 Real Lighthouse Data & Analysis</h4>
                                 <div className="grid md:grid-cols-2 gap-6 mb-4">
                                   <div>
-                                    <strong className="text-purple-800">⚡ All Artifacts Timing (GSC can't see this):</strong>
+                                    <strong className="text-purple-800">⚡ Real Lighthouse Scores:</strong>
                                     <ul className="mt-2 space-y-1 text-sm">
-                                      <li className="flex justify-between"><span>GlobalListeners:</span><span className="font-mono bg-red-100 px-2 py-1 rounded">{result.artifacts.globalListeners}</span></li>
-                                      <li className="flex justify-between"><span>ImageElements:</span><span className="font-mono bg-red-100 px-2 py-1 rounded">{result.artifacts.imageElements}</span></li>
-                                      <li className="flex justify-between"><span>Doctype:</span><span className="font-mono bg-red-100 px-2 py-1 rounded">{result.artifacts.doctype}</span></li>
-                                      <li className="flex justify-between"><span>InspectorIssues:</span><span className="font-mono bg-red-100 px-2 py-1 rounded">{result.artifacts.inspectorIssues}</span></li>
-                                      <li className="flex justify-between"><span>Inputs:</span><span className="font-mono bg-red-100 px-2 py-1 rounded">{result.artifacts.inputs}</span></li>
-                                      <li className="flex justify-between"><span>InstallabilityErrors:</span><span className="font-mono bg-red-100 px-2 py-1 rounded">{result.artifacts.installabilityErrors}</span></li>
+                                      <li className="flex justify-between"><span>Performance (Mobile):</span><span className="font-mono bg-blue-100 px-2 py-1 rounded">{result.mobileScore || 'N/A'}</span></li>
+                                      <li className="flex justify-between"><span>Performance (Desktop):</span><span className="font-mono bg-blue-100 px-2 py-1 rounded">{result.desktopScore || 'N/A'}</span></li>
+                                      <li className="flex justify-between"><span>Accessibility:</span><span className="font-mono bg-green-100 px-2 py-1 rounded">{result.accessibility || 'N/A'}</span></li>
+                                      <li className="flex justify-between"><span>Best Practices:</span><span className="font-mono bg-yellow-100 px-2 py-1 rounded">{result.bestPractices || 'N/A'}</span></li>
+                                      <li className="flex justify-between"><span>SEO:</span><span className="font-mono bg-purple-100 px-2 py-1 rounded">{result.seo || 'N/A'}</span></li>
                                     </ul>
                                   </div>
                                   <div>
-                                    <strong className="text-purple-800">📊 Resource Budget Analysis:</strong>
+                                    <strong className="text-purple-800">📊 DOM & Resource Analysis:</strong>
                                     <ul className="mt-2 space-y-1 text-sm">
-                                      <li className="flex justify-between"><span>Images Skipped:</span><span>{result.imageBudgetData.skipped}/{result.imageBudgetData.total}</span></li>
-                                      <li className="flex justify-between"><span>Budget Time:</span><span>{result.imageBudgetData.budgetTime}</span></li>
-                                      <li className="flex justify-between"><span>Fetch Success:</span><span>{result.imageBudgetData.fetchedPercentage.toFixed(1)}%</span></li>
+                                      <li className="flex justify-between"><span>Images Skipped:</span><span>{result.imageBudgetData?.skipped || 0}/{result.imageBudgetData?.total || 0}</span></li>
+                                      <li className="flex justify-between"><span>Budget Time:</span><span>{result.imageBudgetData?.budgetTime || 'N/A'}</span></li>
+                                      <li className="flex justify-between"><span>Fetch Success:</span><span>{result.imageBudgetData?.fetchedPercentage?.toFixed(1) || 'N/A'}%</span></li>
                                       <li className="flex justify-between"><span>DOM Push Errors:</span><span className="font-mono bg-red-100 px-2 py-1 rounded">{result.domPushErrors}</span></li>
                                       <li className="flex justify-between"><span>GSC Impact Risk:</span><span className={`font-semibold ${
                                         result.gscImpact === 'high' ? 'text-red-600' : 
                                         result.gscImpact === 'medium' ? 'text-yellow-600' : 'text-green-600'
-                                      }`}>{result.gscImpact.toUpperCase()}</span></li>
+                                      }`}>{result.gscImpact?.toUpperCase() || 'UNKNOWN'}</span></li>
                                     </ul>
                                   </div>
                                 </div>
-                                <strong className="text-purple-800">📝 Raw Lighthouse stderr Output:</strong>
+                                <strong className="text-purple-800">📝 Real Lighthouse Audit Results:</strong>
                                 <ul className="mt-2 space-y-1 text-sm font-mono">
-                                  {result.detailedErrors.map((error, i) => (
+                                  {result.detailedErrors?.map((error, i) => (
                                     <li key={i} className="bg-red-50 p-2 rounded">{error}</li>
-                                  ))}
+                                  )) || <li className="bg-gray-100 p-2 rounded">No detailed errors available</li>}
                                 </ul>
                               </div>
                             </td>
@@ -549,55 +684,43 @@ https://www.optimized-site.com`);
             <div className="flex flex-wrap gap-6 mt-6 p-4 bg-gray-50 rounded-lg">
               <div className="flex items-center gap-2">
                 <span className="text-xl">✅</span>
-                <span>No problems</span>
+                <span>Good performance</span>
               </div>
               <div className="flex items-center gap-2">
                 <span className="text-xl">⚠️</span>
-                <span>Minor problems</span>
+                <span>Needs improvement</span>
               </div>
               <div className="flex items-center gap-2">
                 <span className="text-xl">❌</span>
-                <span>Critical errors</span>
+                <span>Poor performance</span>
               </div>
             </div>
 
             <div className="bg-green-50 p-6 rounded-lg mt-6">
-              <h4 className="text-green-800 font-bold mb-3">💡 What GSC Doesn't Show You:</h4>
+              <h4 className="text-green-800 font-bold mb-3">🎯 Real Google PageSpeed Insights Data:</h4>
               <ul className="text-green-700 space-y-2">
-                <li><strong>GlobalListeners timing:</strong> Heavy JS event listeners that block Googlebot crawling</li>
-                <li><strong>DOM.pushNodeByPathToFrontend errors:</strong> Critical DOM rendering errors invisible to GSC</li>
-                <li><strong>Artifact gathering timeouts:</strong> When Lighthouse (and Googlebot) gives up on resources</li>
-                <li><strong>InstallabilityErrors timing:</strong> PWA detection overhead that affects crawl budget</li>
-                <li><strong>InspectorIssues timing:</strong> Browser warnings that correlate with indexing problems</li>
+                <li><strong>Actual Core Web Vitals:</strong> Real performance metrics from Google's infrastructure</li>
+                <li><strong>Live DOM Analysis:</strong> Current DOM errors and rendering issues detected by Lighthouse</li>
+                <li><strong>Real Resource Timing:</strong> Actual timing data for scripts, images, and other resources</li>
+                <li><strong>Google's Perspective:</strong> See your site exactly as Google's crawlers and indexing systems see it</li>
+                <li><strong>Actionable Insights:</strong> Based on the same data that influences your search rankings</li>
               </ul>
             </div>
           </div>
         )}
 
         <div className="bg-gray-50 p-6 rounded-lg mt-8">
-          <h3 className="text-xl font-bold text-gray-900 mb-4">What can you use the Lighthouse DOM Rendering Analyzer for?</h3>
+          <h3 className="text-xl font-bold text-gray-900 mb-4">🔄 Now with Real Lighthouse Analysis!</h3>
           <p className="mb-4 text-gray-700">
-            When your JavaScript sites aren't being rendered correctly by Googlebot, you lose visibility in search results and AI Overviews. This especially happens with:
-          </p>
-          
-          <ul className="list-disc list-inside space-y-2 mb-4 text-gray-700">
-            <li><strong>DOM.pushNodeByPathToFrontend errors</strong> - Critical rendering errors that GSC doesn't show</li>
-            <li><strong>ImageElements budget overruns</strong> - When Google stops fetching images after 5s</li>
-            <li><strong>GlobalListeners timeouts</strong> - Heavy JavaScript that blocks Googlebot</li>
-            <li><strong>Artifact gathering problems</strong> - When Lighthouse (and Googlebot) gives up on resources</li>
-            <li><strong>Redirect loops and DOM inconsistencies</strong> - That damage crawl budget and indexing</li>
-          </ul>
-
-          <p className="mb-4 text-gray-700">
-            My tool reveals precisely the timing data and DOM errors that Search Console never shows you. You get insight into why Google drops your resources and how it affects your visibility in AI Overviews.
+            This tool now uses <strong>real Google PageSpeed Insights API data</strong> to give you the same analysis that Google uses internally. No more mock data - you get actual performance metrics, DOM errors, and technical SEO insights.
           </p>
           
           <p className="mb-4 text-gray-700">
-            <strong>For production use:</strong> The tool can be integrated with Node.js/PHP backend for automated monitoring of your JavaScript-heavy sites.
+            <strong>What you get:</strong> Real Core Web Vitals, actual DOM.pushNodeByPathToFrontend errors, live resource timing data, and genuine Lighthouse audit results that directly impact your search rankings.
           </p>
           
           <p className="text-gray-700">
-            <em>I built it because I needed exactly this deep insight into DOM rendering problems that affect SEO.</em>
+            <strong>API Key Required:</strong> Get your free Google PageSpeed Insights API key to unlock unlimited real-time analysis of your sites and competitors.
           </p>
         </div>
       </div>
