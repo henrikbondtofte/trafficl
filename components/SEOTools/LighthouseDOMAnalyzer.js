@@ -12,7 +12,7 @@ export default function LighthouseDOMAnalyzer() {
   const [logOutput, setLogOutput] = useState('');
   const [showResults, setShowResults] = useState(false);
   // Set your API key here - no need to enter it every time
-  const API_KEY = 'YOUR_API_KEY_HERE'; // Replace with your actual API key
+  const API_KEY = 'AIzaSyAF4j61pzPAjPjCjZSkbvB_0LVBm-r1lFc'; // Replace with your actual API key
   const [apiKey, setApiKey] = useState(API_KEY);
   const [showApiKeyInput, setShowApiKeyInput] = useState(false);
   const [apiKeyStatus, setApiKeyStatus] = useState('✅ API key set in code');
