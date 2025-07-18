@@ -5,8 +5,11 @@ export default function LighthouseDOMAnalyzer() {
   const [apiKey, setApiKey] = useState('');
   const [singleUrl, setSingleUrl] = useState('');
   const [batchUrls, setBatchUrls] = useState('');
+  const [competitorUrls, setCompetitorUrls] = useState('');
   const [results, setResults] = useState([]);
+  const [competitorResults, setCompetitorResults] = useState([]);
   const [isRunning, setIsRunning] = useState(false);
+  const [isRunningCompetitors, setIsRunningCompetitors] = useState(false);
   const [progress, setProgress] = useState({ current: 0, total: 0 });
   const [showDetails, setShowDetails] = useState({});
   const [showAuditDetails, setShowAuditDetails] = useState({});
@@ -376,6 +379,254 @@ export default function LighthouseDOMAnalyzer() {
     setIsRunning(false);
   };
 
+  // Run competitor analysis
+  const runCompetitorAnalysis = async () => {
+    const urls = competitorUrls.split('\n').filter(url => url.trim());
+    if (urls.length === 0) {
+      alert('❌ Please enter competitor URLs (one per line)');
+      return;
+    }
+
+    if (!isApiKeyReady()) {
+      alert('❌ Please enter your API key first');
+      return;
+    }
+
+    setIsRunningCompetitors(true);
+    setProgress({ current: 0, total: urls.length });
+    setCompetitorResults([]);
+
+    const compResults = [];
+    for (let i = 0; i < urls.length; i++) {
+      const url = urls[i].trim();
+      if (url) {
+        try {
+          setProgress({ current: i + 1, total: urls.length });
+          const result = await runPageSpeedInsights(url);
+          compResults.push(result);
+          setCompetitorResults([...compResults]);
+          
+          if (i < urls.length - 1) {
+            await new Promise(resolve => setTimeout(resolve, 3000));
+          }
+        } catch (error) {
+          console.error(`Competitor analysis error for ${url}:`, error);
+          compResults.push({ url, error: error.message, status: 'error' });
+        }
+      }
+    }
+    
+    setIsRunningCompetitors(false);
+  };
+
+  // Generate benchmark data
+  const generateBenchmark = () => {
+    if (results.length === 0 || competitorResults.length === 0) return null;
+    
+    const myResult = results[0];
+    if (myResult.status === 'error') return null;
+    
+    const validCompetitors = competitorResults.filter(comp => comp.status === 'success');
+    if (validCompetitors.length === 0) return null;
+    
+    const benchmark = {
+      your_site: {
+        url: myResult.url,
+        performance_mobile: myResult.performance_mobile,
+        performance_desktop: myResult.performance_desktop,
+        dom_errors: myResult.dom_errors,
+        gsc_risk: myResult.gsc_risk,
+        accessibility: myResult.accessibility,
+        seo: myResult.seo
+      },
+      competitors: validCompetitors.map(comp => ({
+        url: comp.url,
+        performance_mobile: comp.performance_mobile,
+        performance_desktop: comp.performance_desktop,
+        dom_errors: comp.dom_errors,
+        gsc_risk: comp.gsc_risk,
+        accessibility: comp.accessibility,
+        seo: comp.seo
+      })),
+      analysis: {
+        performance_mobile_rank: 1 + validCompetitors.filter(comp => comp.performance_mobile > myResult.performance_mobile).length,
+        performance_desktop_rank: 1 + validCompetitors.filter(comp => comp.performance_desktop > myResult.performance_desktop).length,
+        dom_errors_rank: 1 + validCompetitors.filter(comp => comp.dom_errors < myResult.dom_errors).length,
+        best_competitor_dom: Math.min(...validCompetitors.map(comp => comp.dom_errors)),
+        worst_competitor_dom: Math.max(...validCompetitors.map(comp => comp.dom_errors)),
+        avg_competitor_performance_mobile: Math.round(validCompetitors.reduce((sum, comp) => sum + comp.performance_mobile, 0) / validCompetitors.length),
+        avg_competitor_performance_desktop: Math.round(validCompetitors.reduce((sum, comp) => sum + comp.performance_desktop, 0) / validCompetitors.length)
+      }
+    };
+    
+    return benchmark;
+  };
+
+  // Benchmark component
+  const BenchmarkDashboard = ({ benchmark }) => {
+    if (!benchmark) return null;
+    
+    const { your_site, competitors, analysis } = benchmark;
+    
+    return (
+      <div className="bg-gradient-to-r from-blue-50 to-purple-50 border-2 border-blue-300 rounded-lg p-6 mb-8">
+        <h2 className="text-2xl font-bold text-gray-900 mb-6 text-center">📊 Competitive Benchmark Dashboard</h2>
+        
+        {/* Key Metrics Summary */}
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-6">
+          <div className="bg-white rounded-lg p-4 shadow-sm border">
+            <div className="text-center">
+              <div className="text-2xl font-bold mb-2">#{analysis.performance_mobile_rank}</div>
+              <div className="text-sm text-gray-600">Mobile Performance Rank</div>
+              <div className={`text-xs mt-1 ${analysis.performance_mobile_rank === 1 ? 'text-green-600' : analysis.performance_mobile_rank > 3 ? 'text-red-600' : 'text-yellow-600'}`}>
+                {analysis.performance_mobile_rank === 1 ? '🥇 Leading' : analysis.performance_mobile_rank > 3 ? '🚨 Behind' : '⚠️ Competitive'}
+              </div>
+            </div>
+          </div>
+          
+          <div className="bg-white rounded-lg p-4 shadow-sm border">
+            <div className="text-center">
+              <div className="text-2xl font-bold mb-2">#{analysis.dom_errors_rank}</div>
+              <div className="text-sm text-gray-600">DOM Quality Rank</div>
+              <div className={`text-xs mt-1 ${analysis.dom_errors_rank === 1 ? 'text-green-600' : analysis.dom_errors_rank > 3 ? 'text-red-600' : 'text-yellow-600'}`}>
+                {analysis.dom_errors_rank === 1 ? '🥇 Best DOM' : analysis.dom_errors_rank > 3 ? '🚨 DOM Issues' : '⚠️ Average'}
+              </div>
+            </div>
+          </div>
+          
+          <div className="bg-white rounded-lg p-4 shadow-sm border">
+            <div className="text-center">
+              <div className="text-2xl font-bold mb-2">{your_site.dom_errors}</div>
+              <div className="text-sm text-gray-600">Your DOM Errors</div>
+              <div className="text-xs mt-1 text-gray-500">
+                Best: {analysis.best_competitor_dom} | Worst: {analysis.worst_competitor_dom}
+              </div>
+            </div>
+          </div>
+          
+          <div className="bg-white rounded-lg p-4 shadow-sm border">
+            <div className="text-center">
+              <div className={`text-2xl font-bold mb-2 ${your_site.gsc_risk === 'LOW' ? 'text-green-600' : your_site.gsc_risk === 'MEDIUM' ? 'text-yellow-600' : 'text-red-600'}`}>
+                {your_site.gsc_risk}
+              </div>
+              <div className="text-sm text-gray-600">GSC Impact Risk</div>
+              <div className="text-xs mt-1 text-gray-500">
+                Search Console Risk Level
+              </div>
+            </div>
+          </div>
+        </div>
+        
+        {/* Critical Issues Alerts */}
+        <div className="space-y-3 mb-6">
+          {analysis.dom_errors_rank > 3 && (
+            <div className="bg-red-50 border-l-4 border-red-500 p-4 rounded">
+              <div className="flex items-center">
+                <div className="text-red-600 mr-3">🚨</div>
+                <div>
+                  <div className="font-semibold text-red-700">Critical DOM Issue</div>
+                  <div className="text-sm text-red-600">
+                    You have {your_site.dom_errors} DOM errors vs best competitor with {analysis.best_competitor_dom}. This could impact SERP rankings.
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+          
+          {analysis.performance_mobile_rank > 3 && (
+            <div className="bg-yellow-50 border-l-4 border-yellow-500 p-4 rounded">
+              <div className="flex items-center">
+                <div className="text-yellow-600 mr-3">⚠️</div>
+                <div>
+                  <div className="font-semibold text-yellow-700">Performance Gap</div>
+                  <div className="text-sm text-yellow-600">
+                    Mobile performance ({your_site.performance_mobile}) below competitor average ({analysis.avg_competitor_performance_mobile})
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+          
+          {analysis.dom_errors_rank === 1 && analysis.performance_mobile_rank <= 2 && (
+            <div className="bg-green-50 border-l-4 border-green-500 p-4 rounded">
+              <div className="flex items-center">
+                <div className="text-green-600 mr-3">✅</div>
+                <div>
+                  <div className="font-semibold text-green-700">Technical Advantage</div>
+                  <div className="text-sm text-green-600">
+                    You're leading in DOM quality and competitive in performance. Great technical foundation!
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+        
+        {/* Quick Comparison Chart */}
+        <div className="bg-white rounded-lg p-4 border">
+          <h3 className="font-semibold mb-4 text-center">📈 Performance vs Competitors</h3>
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="font-medium">Your Site</div>
+              <div className="flex items-center gap-4">
+                <div className="text-sm">Mobile: {your_site.performance_mobile}</div>
+                <div className="text-sm">DOM: {your_site.dom_errors}</div>
+                <div className="text-sm">GSC: {your_site.gsc_risk}</div>
+              </div>
+            </div>
+            {competitors.map((comp, idx) => (
+              <div key={idx} className="flex items-center justify-between text-gray-600">
+                <div className="text-sm">Competitor {idx + 1}</div>
+                <div className="flex items-center gap-4">
+                  <div className="text-sm">Mobile: {comp.performance_mobile}</div>
+                  <div className="text-sm">DOM: {comp.dom_errors}</div>
+                  <div className="text-sm">GSC: {comp.gsc_risk}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  };
+    const urls = batchUrls.split('\n').filter(url => url.trim());
+    if (urls.length === 0) {
+      alert('❌ Please enter URLs to test (one per line)');
+      return;
+    }
+
+    if (!isApiKeyReady()) {
+      alert('❌ Please enter your API key first');
+      return;
+    }
+
+    setIsRunning(true);
+    setProgress({ current: 0, total: urls.length });
+    setResults([]);
+
+    const batchResults = [];
+    for (let i = 0; i < urls.length; i++) {
+      const url = urls[i].trim();
+      if (url) {
+        try {
+          setProgress({ current: i + 1, total: urls.length });
+          const result = await runPageSpeedInsights(url);
+          batchResults.push(result);
+          setResults([...batchResults]);
+          
+          if (i < urls.length - 1) {
+            await new Promise(resolve => setTimeout(resolve, 3000));
+          }
+        } catch (error) {
+          console.error(`Batch test error for ${url}:`, error);
+          batchResults.push({ url, error: error.message, status: 'error' });
+        }
+      }
+    }
+    
+    setIsRunning(false);
+  };
+
   // Toggle details
   const toggleDetails = (index) => {
     setShowDetails(prev => ({
@@ -396,10 +647,10 @@ export default function LighthouseDOMAnalyzer() {
     <div className="max-w-6xl mx-auto p-6 bg-white">
       <div className="mb-8">
         <h1 className="text-3xl font-bold text-gray-900 mb-4">
-          🔍 Lighthouse DOM Analyzer
+          🔍 Lighthouse DOM Analyzer & Competitor Benchmark
         </h1>
         <p className="text-gray-600">
-          Advanced DOM analysis tool using Google's PageSpeed Insights API for deep technical insights beyond standard performance metrics
+          Advanced DOM analysis and competitive benchmarking using Google's PageSpeed Insights API. Identify technical SEO issues and SERP ranking factors.
         </p>
         <div className="mt-4 bg-blue-50 border border-blue-200 rounded-lg p-4">
           <div className="flex items-center gap-2 mb-2">
@@ -410,8 +661,8 @@ export default function LighthouseDOMAnalyzer() {
             <div>• DOM Node Analysis - Missing/inaccessible nodes detection</div>
             <div>• Lighthouse Artifacts Timing - getArtifact performance metrics</div>
             <div>• GSC Impact Risk Assessment - Search Console impact prediction</div>
-            <div>• Budget Time Analysis - Resource loading efficiency</div>
-            <div>• Critical Path DOM Analysis - Node depth and accessibility</div>
+            <div>• Competitive Benchmarking - Compare against 3 competitors</div>
+            <div>• SERP Fall Analysis - Identify technical ranking factors</div>
           </div>
         </div>
       </div>
@@ -506,21 +757,57 @@ export default function LighthouseDOMAnalyzer() {
         </button>
       </div>
 
+      {/* Competitor Analysis */}
+      <div className="bg-orange-50 rounded-lg p-6 mb-8">
+        <h2 className="text-xl font-semibold mb-4">🥊 Competitor Analysis</h2>
+        <p className="text-sm text-gray-600 mb-4">
+          Compare your site's DOM quality and performance against competitors to identify ranking opportunities
+        </p>
+        <div className="mb-4">
+          <textarea
+            value={competitorUrls}
+            onChange={(e) => setCompetitorUrls(e.target.value)}
+            placeholder="https://competitor1.com&#10;https://competitor2.com&#10;https://competitor3.com"
+            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 h-24"
+          />
+        </div>
+        <button
+          onClick={runCompetitorAnalysis}
+          disabled={isRunningCompetitors || !isApiKeyReady() || results.length === 0}
+          className="px-6 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 disabled:opacity-50 flex items-center gap-2"
+        >
+          <Zap size={20} />
+          {isRunningCompetitors ? 'Analyzing Competitors...' : 'Analyze Competitors'}
+        </button>
+        {results.length === 0 && (
+          <div className="mt-2 text-sm text-orange-600">
+            ⚠️ First test your own site above, then analyze competitors
+          </div>
+        )}
+      </div>
+
       {/* Progress */}
-      {isRunning && (
+      {(isRunning || isRunningCompetitors) && (
         <div className="mb-8">
           <div className="flex justify-between items-center mb-2">
-            <span className="text-sm text-gray-600">Progress</span>
+            <span className="text-sm text-gray-600">
+              {isRunningCompetitors ? 'Analyzing Competitors' : 'Progress'}
+            </span>
             <span className="text-sm text-gray-600">{progress.current} / {progress.total}</span>
           </div>
           <div className="w-full bg-gray-200 rounded-full h-2">
             <div
-              className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+              className={`h-2 rounded-full transition-all duration-300 ${
+                isRunningCompetitors ? 'bg-orange-600' : 'bg-blue-600'
+              }`}
               style={{ width: `${(progress.current / progress.total) * 100}%` }}
             />
           </div>
         </div>
       )}
+
+      {/* Benchmark Dashboard */}
+      <BenchmarkDashboard benchmark={generateBenchmark()} />
 
       {/* Results */}
       {results.length > 0 && (
@@ -825,16 +1112,17 @@ export default function LighthouseDOMAnalyzer() {
 
       {/* Footer */}
       <div className="bg-gray-50 p-6 rounded-lg mt-8">
-        <h3 className="text-xl font-bold text-gray-900 mb-4">🔧 Advanced DOM Analysis Tool</h3>
+        <h3 className="text-xl font-bold text-gray-900 mb-4">🔧 Advanced DOM Analysis & Competitive Intelligence</h3>
         <p className="mb-4 text-gray-700">
-          This specialized tool goes beyond standard PageSpeed Insights to provide deep DOM structure analysis, 
-          node accessibility detection, and Google Search Console impact predictions.
+          This specialized tool combines deep DOM structure analysis with competitive benchmarking to identify 
+          technical SEO issues and ranking factors that may impact SERP performance.
         </p>
         <div className="text-sm text-gray-600 space-y-2">
           <div><strong>🏗️ DOM Analysis:</strong> Detects missing nodes, accessibility issues, and critical path problems</div>
           <div><strong>⚡ Lighthouse Artifacts:</strong> Timing analysis of getArtifact operations for performance debugging</div>
           <div><strong>📊 GSC Impact:</strong> Predicts potential Google Search Console performance impacts</div>
-          <div><strong>⏱️ Note:</strong> Each comprehensive DOM analysis takes 10-15 seconds for both mobile and desktop</div>
+          <div><strong>🥊 Competitive Intelligence:</strong> Benchmark against competitors to identify ranking gaps</div>
+          <div><strong>⏱️ Note:</strong> Each comprehensive analysis takes 10-15 seconds for both mobile and desktop</div>
         </div>
       </div>
     </div>
