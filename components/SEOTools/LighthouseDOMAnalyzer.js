@@ -3,7 +3,7 @@ import { Zap, Download, ExternalLink, Eye, FileText, AlertCircle } from 'lucide-
 
 export default function LighthouseDOMAnalyzer() {
   // Set your API key directly here
-  const API_KEY = 'AIzaSyAF4j6lpzPAiPjCjZSkbvB_0LVBm-rlfTc';
+  const API_KEY = '';
   
   const [singleUrl, setSingleUrl] = useState('');
   const [batchUrls, setBatchUrls] = useState('');
