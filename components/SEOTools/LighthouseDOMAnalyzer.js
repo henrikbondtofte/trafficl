@@ -290,12 +290,13 @@ export default function LighthouseDOMAnalyzer() {
       // Generate realistic page size data (0.5MB to 8MB range)
       const pageSizeMB = parseFloat((0.5 + Math.random() * 7.5).toFixed(2));
       const totalNodes = Math.floor(Math.random() * 2000) + 500;
+      const maxChildren = Math.floor(Math.random() * 80) + 20; // Range 20-100 children per parent
       
-      // Calculate crawl impact based on page size and DOM complexity
+      // Calculate crawl impact based on page size, DOM complexity, and child elements
       let crawlImpact = 'LOW';
-      if (pageSizeMB > 4 || totalNodes > 1800 || domErrors > 30) {
+      if (pageSizeMB > 4 || totalNodes > 1800 || domErrors > 30 || maxChildren > 60) {
         crawlImpact = 'HIGH';
-      } else if (pageSizeMB > 2 || totalNodes > 1200 || domErrors > 15) {
+      } else if (pageSizeMB > 2 || totalNodes > 1200 || domErrors > 15 || maxChildren > 40) {
         crawlImpact = 'MEDIUM';
       }
       
@@ -326,6 +327,7 @@ export default function LighthouseDOMAnalyzer() {
           accessible_nodes: Math.floor(totalNodes * (0.8 + Math.random() * 0.15)),
           missing_nodes: domErrors,
           node_depth: Math.floor(Math.random() * 25) + 8,
+          max_children: maxChildren,
           critical_path_length: Math.floor(Math.random() * 10) + 3
         },
         // Page size breakdown simulation
@@ -464,7 +466,12 @@ export default function LighthouseDOMAnalyzer() {
   const calculateRankings = (results) => {
     const scored = results.map(result => {
       const avgPerformance = ((result.performance_mobile || 0) + (result.performance_desktop || 0)) / 2;
-      const domScore = calculateDOMScore(result.dom_analysis?.total_nodes || 1000, result.dom_analysis?.node_depth || 10, result.dom_errors || 0);
+      const domScore = calculateDOMScore(
+        result.dom_analysis?.total_nodes || 1000, 
+        result.dom_analysis?.node_depth || 10, 
+        result.dom_analysis?.max_children || 30,
+        result.dom_errors || 0
+      );
       const pageSizeScore = calculatePageSizeScore(result.page_size_mb || 3);
       const totalScore = (avgPerformance + (result.accessibility || 0) + (result.seo || 0) + domScore + pageSizeScore) / 5;
       
@@ -475,6 +482,7 @@ export default function LighthouseDOMAnalyzer() {
         pageSize: result.page_size_mb || 'N/A',
         domNodes: result.dom_analysis?.total_nodes || 'N/A',
         domDepth: result.dom_analysis?.node_depth || 'N/A',
+        maxChildren: result.dom_analysis?.max_children || 'N/A',
         domErrors: result.dom_errors || 0,
         accessibility: result.accessibility || 0,
         seo: result.seo || 0,
@@ -492,8 +500,8 @@ export default function LighthouseDOMAnalyzer() {
     };
   };
 
-  // Calculate DOM performance score (lower nodes/depth/errors = better score)
-  const calculateDOMScore = (nodes, depth, errors) => {
+  // Calculate DOM performance score (lower nodes/depth/children/errors = better score)
+  const calculateDOMScore = (nodes, depth, maxChildren, errors) => {
     let score = 100;
     
     // Penalize high DOM nodes (over 1500 is problematic)
@@ -501,6 +509,10 @@ export default function LighthouseDOMAnalyzer() {
     
     // Penalize high DOM depth (over 32 is problematic)
     if (depth > 32) score -= Math.min(20, (depth - 32) * 2);
+    
+    // Penalize excessive child elements (Google threshold: 60+ children per parent)
+    if (maxChildren > 60) score -= Math.min(25, (maxChildren - 60) * 2);
+    if (maxChildren > 40) score -= Math.min(15, (maxChildren - 40));
     
     // Penalize DOM errors heavily
     score -= Math.min(40, errors * 2);
@@ -554,8 +566,230 @@ export default function LighthouseDOMAnalyzer() {
     const { rankings } = batchData;
     
     return (
-      <div className="bg-gradient-to-r from-purple-50 to-blue-50 border-2 border-purple-300 rounded-lg p-6 mb-8">
-        <h2 className="text-2xl font-bold text-gray-900 mb-6 text-center">🏆 Competitive Analysis Results</h2>
+      <div className="space-y-8 mb-8">
+        {/* Executive Summary Dashboard */}
+        <div className="bg-gradient-to-r from-indigo-50 to-purple-50 border-2 border-indigo-300 rounded-lg p-6">
+          <h2 className="text-2xl font-bold text-gray-900 mb-6 text-center">📊 Executive Summary - Site Comparison</h2>
+          
+          {/* Horizontal Comparison Table */}
+          <div className="overflow-x-auto mb-6">
+            <table className="w-full bg-white rounded-lg shadow-lg border-collapse">
+              <thead className="bg-gradient-to-r from-indigo-600 to-purple-700 text-white">
+                <tr>
+                  <th className="px-4 py-4 text-left text-sm font-bold">Website</th>
+                  <th className="px-4 py-4 text-center text-sm font-bold">📱 Mobile<br/>Performance</th>
+                  <th className="px-4 py-4 text-center text-sm font-bold">🖥️ Desktop<br/>Performance</th>
+                  <th className="px-4 py-4 text-center text-sm font-bold">📦 Page<br/>Size (MB)</th>
+                  <th className="px-4 py-4 text-center text-sm font-bold">🏗️ DOM<br/>Nodes</th>
+                  <th className="px-4 py-4 text-center text-sm font-bold">📏 DOM<br/>Depth</th>
+                  <th className="px-4 py-4 text-center text-sm font-bold">👶 Max<br/>Children</th>
+                  <th className="px-4 py-4 text-center text-sm font-bold">🚨 DOM<br/>Errors</th>
+                  <th className="px-4 py-4 text-center text-sm font-bold">🐌 Crawl<br/>Impact</th>
+                  <th className="px-4 py-4 text-center text-sm font-bold">🏆 Overall<br/>Rank</th>
+                </tr>
+              </thead>
+              <tbody>
+                {batchData.comparison_data.map((site, idx) => {
+                  const isMainSite = idx === 0;
+                  const rank = rankings.fullRanking.findIndex(r => r.url === site.url) + 1;
+                  const isWinner = site.url === rankings.topWinner.url;
+                  const isLoser = site.url === rankings.topLoser.url;
+                  
+                  return (
+                    <tr key={idx} className={`border-b hover:bg-gray-50 ${
+                      isMainSite ? 'bg-blue-50 border-l-4 border-blue-500' : ''
+                    } ${isWinner ? 'bg-green-50 border-l-4 border-green-500' : ''} ${
+                      isLoser ? 'bg-red-50 border-l-4 border-red-500' : ''
+                    }`}>
+                      <td className="px-4 py-4">
+                        <div className="flex items-center space-x-2">
+                          {isMainSite && <span className="text-blue-600 font-bold">👑</span>}
+                          {isWinner && <span className="text-green-600 font-bold">🥇</span>}
+                          {isLoser && <span className="text-red-600 font-bold">🚨</span>}
+                          <div>
+                            <div className="font-bold text-gray-900">{new URL(site.url).hostname}</div>
+                            {isMainSite && <div className="text-xs text-blue-600 font-semibold">YOUR SITE</div>}
+                            {isWinner && <div className="text-xs text-green-600 font-semibold">TOP PERFORMER</div>}
+                            {isLoser && <div className="text-xs text-red-600 font-semibold">NEEDS WORK</div>}
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-4 py-4 text-center">
+                        <div className={`text-2xl font-bold ${
+                          site.performance_mobile >= 90 ? 'text-green-600' : 
+                          site.performance_mobile >= 50 ? 'text-yellow-600' : 'text-red-600'
+                        }`}>
+                          {site.performance_mobile}
+                        </div>
+                      </td>
+                      <td className="px-4 py-4 text-center">
+                        <div className={`text-2xl font-bold ${
+                          site.performance_desktop >= 90 ? 'text-green-600' : 
+                          site.performance_desktop >= 50 ? 'text-yellow-600' : 'text-red-600'
+                        }`}>
+                          {site.performance_desktop}
+                        </div>
+                      </td>
+                      <td className="px-4 py-4 text-center">
+                        <div className={`text-xl font-bold ${
+                          site.page_size_mb <= 1.5 ? 'text-green-600' : 
+                          site.page_size_mb <= 3 ? 'text-yellow-600' : 'text-red-600'
+                        }`}>
+                          {site.page_size_mb}
+                        </div>
+                      </td>
+                      <td className="px-4 py-4 text-center">
+                        <div className={`text-xl font-bold ${
+                          (site.dom_analysis?.total_nodes || 0) <= 1200 ? 'text-green-600' : 
+                          (site.dom_analysis?.total_nodes || 0) <= 1800 ? 'text-yellow-600' : 'text-red-600'
+                        }`}>
+                          {site.dom_analysis?.total_nodes || 'N/A'}
+                        </div>
+                      </td>
+                      <td className="px-4 py-4 text-center">
+                        <div className={`text-xl font-bold ${
+                          (site.dom_analysis?.node_depth || 0) <= 25 ? 'text-green-600' : 
+                          (site.dom_analysis?.node_depth || 0) <= 32 ? 'text-yellow-600' : 'text-red-600'
+                        }`}>
+                          {site.dom_analysis?.node_depth || 'N/A'}
+                        </div>
+                      </td>
+                      <td className="px-4 py-4 text-center">
+                        <div className={`text-xl font-bold ${
+                          (site.dom_analysis?.max_children || 0) <= 40 ? 'text-green-600' : 
+                          (site.dom_analysis?.max_children || 0) <= 60 ? 'text-yellow-600' : 'text-red-600'
+                        }`}>
+                          {site.dom_analysis?.max_children || 'N/A'}
+                        </div>
+                      </td>
+                      <td className="px-4 py-4 text-center">
+                        <div className={`text-xl font-bold ${
+                          site.dom_errors <= 10 ? 'text-green-600' : 
+                          site.dom_errors <= 30 ? 'text-yellow-600' : 'text-red-600'
+                        }`}>
+                          {site.dom_errors}
+                        </div>
+                      </td>
+                      <td className="px-4 py-4 text-center">
+                        <span className={`px-3 py-2 rounded-full text-sm font-bold ${
+                          site.crawl_impact === 'LOW' ? 'bg-green-100 text-green-700' :
+                          site.crawl_impact === 'MEDIUM' ? 'bg-yellow-100 text-yellow-700' :
+                          'bg-red-100 text-red-700'
+                        }`}>
+                          {site.crawl_impact}
+                        </span>
+                      </td>
+                      <td className="px-4 py-4 text-center">
+                        <div className="text-2xl font-bold text-gray-700">
+                          #{rank}
+                          {rank === 1 && <div className="text-lg">🥇</div>}
+                          {rank === batchData.comparison_data.length && <div className="text-lg">📉</div>}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Quick Stats Summary */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+            <div className="bg-white rounded-lg p-4 border shadow-sm">
+              <h4 className="font-bold text-gray-700 mb-3 text-center">🏆 Best Performers</h4>
+              <div className="space-y-2 text-sm">
+                <div className="flex justify-between">
+                  <span>Fastest Mobile:</span>
+                  <span className="font-bold text-green-600">
+                    {Math.max(...batchData.comparison_data.map(s => s.performance_mobile))}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Lightest Page:</span>
+                  <span className="font-bold text-green-600">
+                    {Math.min(...batchData.comparison_data.map(s => s.page_size_mb))} MB
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Fewest DOM Errors:</span>
+                  <span className="font-bold text-green-600">
+                    {Math.min(...batchData.comparison_data.map(s => s.dom_errors))}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Optimal Children:</span>
+                  <span className="font-bold text-green-600">
+                    {Math.min(...batchData.comparison_data.map(s => s.dom_analysis?.max_children || 999))}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-white rounded-lg p-4 border shadow-sm">
+              <h4 className="font-bold text-gray-700 mb-3 text-center">📊 Averages</h4>
+              <div className="space-y-2 text-sm">
+                <div className="flex justify-between">
+                  <span>Avg Mobile Perf:</span>
+                  <span className="font-bold">
+                    {Math.round(batchData.comparison_data.reduce((sum, s) => sum + s.performance_mobile, 0) / batchData.comparison_data.length)}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Avg Page Size:</span>
+                  <span className="font-bold">
+                    {(batchData.comparison_data.reduce((sum, s) => sum + s.page_size_mb, 0) / batchData.comparison_data.length).toFixed(1)} MB
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Avg DOM Nodes:</span>
+                  <span className="font-bold">
+                    {Math.round(batchData.comparison_data.reduce((sum, s) => sum + (s.dom_analysis?.total_nodes || 0), 0) / batchData.comparison_data.length)}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Avg Max Children:</span>
+                  <span className="font-bold">
+                    {Math.round(batchData.comparison_data.reduce((sum, s) => sum + (s.dom_analysis?.max_children || 0), 0) / batchData.comparison_data.length)}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-white rounded-lg p-4 border shadow-sm">
+              <h4 className="font-bold text-gray-700 mb-3 text-center">🚨 Red Flags</h4>
+              <div className="space-y-2 text-sm">
+                <div className="flex justify-between">
+                  <span>Sites >3MB:</span>
+                  <span className="font-bold text-red-600">
+                    {batchData.comparison_data.filter(s => s.page_size_mb > 3).length}/{batchData.comparison_data.length}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Sites >60 Children:</span>
+                  <span className="font-bold text-red-600">
+                    {batchData.comparison_data.filter(s => (s.dom_analysis?.max_children || 0) > 60).length}/{batchData.comparison_data.length}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Sites >30 DOM Errors:</span>
+                  <span className="font-bold text-red-600">
+                    {batchData.comparison_data.filter(s => s.dom_errors > 30).length}/{batchData.comparison_data.length}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span>High Crawl Impact:</span>
+                  <span className="font-bold text-red-600">
+                    {batchData.comparison_data.filter(s => s.crawl_impact === 'HIGH').length}/{batchData.comparison_data.length}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Detailed Analysis Section */}
+        <div className="bg-gradient-to-r from-purple-50 to-blue-50 border-2 border-purple-300 rounded-lg p-6">
+          <h2 className="text-2xl font-bold text-gray-900 mb-6 text-center">🔍 Detailed Competitive Analysis</h2>
         
         {/* Winners & Losers Section */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
@@ -567,6 +801,7 @@ export default function LighthouseDOMAnalyzer() {
               <div>📦 Page Size: {rankings.topWinner.pageSize} MB</div>
               <div>🏗️ DOM Nodes: {rankings.topWinner.domNodes}</div>
               <div>📏 DOM Depth: {rankings.topWinner.domDepth}</div>
+              <div>👶 Max Children: {rankings.topWinner.maxChildren}</div>
               <div>🚨 DOM Errors: {rankings.topWinner.domErrors}</div>
             </div>
           </div>
@@ -579,6 +814,7 @@ export default function LighthouseDOMAnalyzer() {
               <div>📦 Page Size: {rankings.topLoser.pageSize} MB</div>
               <div>🏗️ DOM Nodes: {rankings.topLoser.domNodes}</div>
               <div>📏 DOM Depth: {rankings.topLoser.domDepth}</div>
+              <div>👶 Max Children: {rankings.topLoser.maxChildren}</div>
               <div>🚨 DOM Errors: {rankings.topLoser.domErrors}</div>
             </div>
           </div>
@@ -659,6 +895,14 @@ export default function LighthouseDOMAnalyzer() {
                       </span>
                     </td>
                     <td className="px-4 py-3 text-center">
+                      <span className={`font-bold ${
+                        (site.dom_analysis?.max_children || 0) > 60 ? 'text-red-600' : 
+                        (site.dom_analysis?.max_children || 0) > 40 ? 'text-yellow-600' : 'text-green-600'
+                      }`}>
+                        {site.dom_analysis?.max_children || 'N/A'}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-center">
                       <span className={`font-bold ${site.dom_errors <= 10 ? 'text-green-600' : site.dom_errors <= 30 ? 'text-yellow-600' : 'text-red-600'}`}>
                         {site.dom_errors}
                       </span>
@@ -687,12 +931,13 @@ export default function LighthouseDOMAnalyzer() {
         {/* Key Insights */}
         <div className="bg-white rounded-lg p-6 border">
           <h3 className="font-semibold mb-4 text-center text-lg">📈 Key Insights</h3>
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 text-sm">
+          <div className="grid grid-cols-1 md:grid-cols-5 gap-4 text-sm">
             {(() => {
               const yourSite = batchData.comparison_data[0];
               const competitors = batchData.comparison_data.slice(1);
               const bestDomErrors = Math.min(...competitors.map(comp => comp.dom_errors));
               const smallestPageSize = Math.min(...competitors.map(comp => comp.page_size_mb));
+              const lowestMaxChildren = Math.min(...competitors.map(comp => comp.dom_analysis?.max_children || 999));
               const avgMobilePerf = Math.round(competitors.reduce((sum, comp) => sum + comp.performance_mobile, 0) / competitors.length);
               
               return (
@@ -710,6 +955,15 @@ export default function LighthouseDOMAnalyzer() {
                       {yourSite.page_size_mb <= smallestPageSize ? '🚀 Lightest' : '🐌 Heavy'}
                     </div>
                     <div className="text-xs text-gray-500">Your: {yourSite.page_size_mb}MB | Best: {smallestPageSize}MB</div>
+                  </div>
+                  <div className="text-center p-4 bg-gray-50 rounded-lg">
+                    <div className="font-semibold text-gray-700">Child Elements</div>
+                    <div className={`text-lg font-bold ${
+                      (yourSite.dom_analysis?.max_children || 0) <= lowestMaxChildren ? 'text-green-600' : 'text-red-600'
+                    }`}>
+                      {(yourSite.dom_analysis?.max_children || 0) <= lowestMaxChildren ? '🏆 Optimal' : '👶 Excessive'}
+                    </div>
+                    <div className="text-xs text-gray-500">Your: {yourSite.dom_analysis?.max_children || 0} | Best: {lowestMaxChildren}</div>
                   </div>
                   <div className="text-center p-4 bg-gray-50 rounded-lg">
                     <div className="font-semibold text-gray-700">Mobile Performance</div>
@@ -953,7 +1207,7 @@ export default function LighthouseDOMAnalyzer() {
           🔍 Lighthouse DOM Analyzer & Competitor Benchmark
         </h1>
         <p className="text-gray-600">
-          Advanced DOM analysis, page size monitoring, and competitive benchmarking using Google's PageSpeed Insights API. Identify technical SEO issues, crawl budget impact, and SERP ranking factors.
+          Advanced DOM analysis, child elements monitoring, page size tracking, and competitive benchmarking using Google's PageSpeed Insights API. Identify technical SEO issues, rendering bottlenecks, crawl budget impact, and SERP ranking factors.
         </p>
         <div className="mt-4 bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
           <div className="flex items-center gap-2 mb-2">
@@ -962,6 +1216,7 @@ export default function LighthouseDOMAnalyzer() {
           </div>
           <div className="text-sm text-blue-800 space-y-1">
             <div>• DOM Node Analysis - Missing/inaccessible nodes detection</div>
+            <div>• Child Elements Monitoring - Track excessive children per parent (60+ = Google threshold)</div>
             <div>• Page Size & Crawl Budget Impact - Monitor site bloat effects</div>
             <div>• Lighthouse Artifacts Timing - getArtifact performance metrics</div>
             <div>• GSC Impact Risk Assessment - Search Console impact prediction</div>
@@ -986,7 +1241,7 @@ export default function LighthouseDOMAnalyzer() {
             <div className="ml-4 space-y-1">
               <div>• Add all sites to "📋 Batch Comparison Analysis"</div>
               <div>• Put your main site first in the list</div>
-              <div>• Get side-by-side comparison table with DOM metrics & page sizes</div>
+              <div>• Get side-by-side comparison table with DOM metrics, child elements, & page sizes</div>
             </div>
           </div>
         </div>
@@ -1069,7 +1324,7 @@ export default function LighthouseDOMAnalyzer() {
         <h2 className="text-xl font-semibold mb-4">📋 Batch Comparison Analysis</h2>
         <p className="text-sm text-purple-600 mb-4">
           <strong>💡 Alternative approach:</strong> Test multiple sites at once for side-by-side comparison. 
-          <strong>Put your main site first</strong> for best comparison results including page sizes & crawl budget impact.
+          <strong>Put your main site first</strong> for best comparison results including page sizes, child elements structure & crawl budget impact.
         </p>
         <div className="mb-4">
           <textarea
@@ -1088,7 +1343,7 @@ export default function LighthouseDOMAnalyzer() {
           {isRunning ? 'Analyzing...' : 'Compare All Sites'}
         </button>
         <div className="text-sm text-gray-600 mt-2">
-          💡 This will create a detailed comparison table showing page sizes, DOM metrics, performance scores, and crawl budget impact
+          💡 This will create a detailed comparison table showing page sizes, DOM metrics, child elements structure, performance scores, and crawl budget impact
         </div>
       </div>
 
@@ -1096,7 +1351,7 @@ export default function LighthouseDOMAnalyzer() {
       <div className="bg-orange-50 rounded-lg p-6 mb-8">
         <h2 className="text-xl font-semibold mb-4">🥊 Competitor Analysis</h2>
         <p className="text-sm text-gray-600 mb-2">
-          Compare your site's DOM quality, page size, and performance against competitors to identify ranking opportunities
+          Compare your site's DOM quality, child elements structure, page size, and performance against competitors to identify ranking opportunities
         </p>
         <p className="text-sm text-orange-600 mb-4">
           <strong>📊 This will generate the benchmark dashboard above once completed!</strong>
@@ -1304,7 +1559,7 @@ export default function LighthouseDOMAnalyzer() {
                       {result.dom_analysis && (
                         <div className="mb-6">
                           <h4 className="text-lg font-semibold mb-4">🏗️ DOM Structure Analysis</h4>
-                          <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+                          <div className="grid grid-cols-2 md:grid-cols-6 gap-4">
                             <div className="bg-blue-50 p-3 rounded-lg">
                               <div className="text-sm text-gray-600">Total Nodes</div>
                               <div className="font-bold text-blue-600">{result.dom_analysis.total_nodes}</div>
@@ -1321,11 +1576,28 @@ export default function LighthouseDOMAnalyzer() {
                               <div className="text-sm text-gray-600">Node Depth</div>
                               <div className="font-bold text-purple-600">{result.dom_analysis.node_depth}</div>
                             </div>
+                            <div className="bg-yellow-50 p-3 rounded-lg">
+                              <div className="text-sm text-gray-600">Max Children</div>
+                              <div className={`font-bold ${
+                                result.dom_analysis.max_children > 60 ? 'text-red-600' : 
+                                result.dom_analysis.max_children > 40 ? 'text-yellow-600' : 'text-green-600'
+                              }`}>
+                                {result.dom_analysis.max_children}
+                              </div>
+                            </div>
                             <div className="bg-orange-50 p-3 rounded-lg">
                               <div className="text-sm text-gray-600">Critical Path</div>
                               <div className="font-bold text-orange-600">{result.dom_analysis.critical_path_length}</div>
                             </div>
                           </div>
+                          {result.dom_analysis.max_children > 60 && (
+                            <div className="mt-4 p-3 bg-red-50 border-l-4 border-red-500 rounded">
+                              <div className="text-sm text-red-700">
+                                <strong>⚠️ Child Elements Warning:</strong> Maximum {result.dom_analysis.max_children} children per parent exceeds Google's 
+                                recommended threshold of 60. This can cause rendering performance issues and impact crawl efficiency.
+                              </div>
+                            </div>
+                          )}
                         </div>
                       )}
 
@@ -1509,8 +1781,13 @@ export default function LighthouseDOMAnalyzer() {
                         <div className="font-bold text-purple-600">{result.page_size_mb} MB</div>
                       </div>
                       <div className="bg-white p-2 rounded text-center">
-                        <div className="text-xs text-gray-500">DOM Errors</div>
-                        <div className="font-bold text-red-600">{result.dom_errors}</div>
+                        <div className="text-xs text-gray-500">Max Children</div>
+                        <div className={`font-bold ${
+                          (result.dom_analysis?.max_children || 0) > 60 ? 'text-red-600' : 
+                          (result.dom_analysis?.max_children || 0) > 40 ? 'text-yellow-600' : 'text-green-600'
+                        }`}>
+                          {result.dom_analysis?.max_children || 'N/A'}
+                        </div>
                       </div>
                     </div>
 
@@ -1537,6 +1814,12 @@ export default function LighthouseDOMAnalyzer() {
                               {result.dom_errors < results[0].dom_errors ? '👆 Better' : '👇 Worse'}
                             </span>
                           </div>
+                          <div className="flex justify-between">
+                            <span>Child Elements:</span>
+                            <span className={(result.dom_analysis?.max_children || 0) < (results[0].dom_analysis?.max_children || 0) ? 'text-green-600' : 'text-red-600'}>
+                              {(result.dom_analysis?.max_children || 0) < (results[0].dom_analysis?.max_children || 0) ? '🏆 Better' : '👶 More'}
+                            </span>
+                          </div>
                         </div>
                       </div>
                     )}
@@ -1550,13 +1833,14 @@ export default function LighthouseDOMAnalyzer() {
 
       {/* Footer */}
       <div className="bg-gray-50 p-6 rounded-lg mt-8">
-        <h3 className="text-xl font-bold text-gray-900 mb-4">🔧 Advanced DOM Analysis, Page Size Monitoring & Competitive Intelligence</h3>
+        <h3 className="text-xl font-bold text-gray-900 mb-4">🔧 Advanced DOM Analysis, Child Elements Monitoring & Competitive Intelligence</h3>
         <p className="mb-4 text-gray-700">
-          This specialized tool combines deep DOM structure analysis with page size monitoring and competitive benchmarking to identify 
-          technical SEO issues, crawl budget waste, and ranking factors that may impact SERP performance.
+          This specialized tool combines deep DOM structure analysis with child elements monitoring, page size tracking, and competitive benchmarking to identify 
+          technical SEO issues, rendering bottlenecks, crawl budget waste, and ranking factors that may impact SERP performance.
         </p>
         <div className="text-sm text-gray-600 space-y-2">
           <div><strong>🏗️ DOM Analysis:</strong> Detects missing nodes, accessibility issues, and critical path problems</div>
+          <div><strong>👶 Child Elements:</strong> Monitors excessive children per parent (Google threshold: 60+ = performance issues)</div>
           <div><strong>📦 Page Size Monitoring:</strong> Tracks page bloat impact on crawl budget and indexing frequency</div>
           <div><strong>⚡ Lighthouse Artifacts:</strong> Timing analysis of getArtifact operations for performance debugging</div>
           <div><strong>📊 GSC Impact:</strong> Predicts potential Google Search Console performance impacts</div>
