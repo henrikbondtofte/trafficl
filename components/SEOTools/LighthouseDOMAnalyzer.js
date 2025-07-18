@@ -759,19 +759,19 @@ export default function LighthouseDOMAnalyzer() {
               <h4 className="font-bold text-gray-700 mb-3 text-center">🚨 Red Flags</h4>
               <div className="space-y-2 text-sm">
                 <div className="flex justify-between">
-                  <span>Sites >3MB:</span>
+                  <span>Sites &gt;3MB:</span>
                   <span className="font-bold text-red-600">
                     {batchData.comparison_data.filter(s => s.page_size_mb > 3).length}/{batchData.comparison_data.length}
                   </span>
                 </div>
                 <div className="flex justify-between">
-                  <span>Sites >60 Children:</span>
+                  <span>Sites &gt;60 Children:</span>
                   <span className="font-bold text-red-600">
                     {batchData.comparison_data.filter(s => (s.dom_analysis?.max_children || 0) > 60).length}/{batchData.comparison_data.length}
                   </span>
                 </div>
                 <div className="flex justify-between">
-                  <span>Sites >30 DOM Errors:</span>
+                  <span>Sites &gt;30 DOM Errors:</span>
                   <span className="font-bold text-red-600">
                     {batchData.comparison_data.filter(s => s.dom_errors > 30).length}/{batchData.comparison_data.length}
                   </span>
