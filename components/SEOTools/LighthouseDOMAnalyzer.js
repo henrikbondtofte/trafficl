@@ -589,43 +589,6 @@ export default function LighthouseDOMAnalyzer() {
       </div>
     );
   };
-    const urls = batchUrls.split('\n').filter(url => url.trim());
-    if (urls.length === 0) {
-      alert('❌ Please enter URLs to test (one per line)');
-      return;
-    }
-
-    if (!isApiKeyReady()) {
-      alert('❌ Please enter your API key first');
-      return;
-    }
-
-    setIsRunning(true);
-    setProgress({ current: 0, total: urls.length });
-    setResults([]);
-
-    const batchResults = [];
-    for (let i = 0; i < urls.length; i++) {
-      const url = urls[i].trim();
-      if (url) {
-        try {
-          setProgress({ current: i + 1, total: urls.length });
-          const result = await runPageSpeedInsights(url);
-          batchResults.push(result);
-          setResults([...batchResults]);
-          
-          if (i < urls.length - 1) {
-            await new Promise(resolve => setTimeout(resolve, 3000));
-          }
-        } catch (error) {
-          console.error(`Batch test error for ${url}:`, error);
-          batchResults.push({ url, error: error.message, status: 'error' });
-        }
-      }
-    }
-    
-    setIsRunning(false);
-  };
 
   // Toggle details
   const toggleDetails = (index) => {
@@ -815,7 +778,7 @@ export default function LighthouseDOMAnalyzer() {
           <h2 className="text-2xl font-bold text-gray-900">📊 Analysis Results</h2>
           
           {results.map((result, index) => (
-            <div key={index} className="bg-white border border-gray-200 rounded-lg p-6 shadow-sm">
+            <div key={index} className="bg-blue-50 border-2 border-blue-300 rounded-lg p-6 shadow-sm">
               <div className="flex justify-between items-start mb-4">
                 <div className="flex-1">
                   <h3 className="text-lg font-semibold text-gray-900 mb-2">{result.url}</h3>
@@ -847,29 +810,43 @@ export default function LighthouseDOMAnalyzer() {
                 <>
                   {/* Lighthouse Scores */}
                   <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
-                    <div className="bg-blue-50 p-3 rounded-lg">
+                    <div className="bg-blue-100 p-3 rounded-lg">
                       <div className="text-sm text-gray-600">Performance (Mobile)</div>
                       <div className="text-2xl font-bold text-blue-600">{result.performance_mobile}</div>
                     </div>
-                    <div className="bg-green-50 p-3 rounded-lg">
+                    <div className="bg-green-100 p-3 rounded-lg">
                       <div className="text-sm text-gray-600">Performance (Desktop)</div>
                       <div className="text-2xl font-bold text-green-600">{result.performance_desktop}</div>
                     </div>
-                    <div className="bg-purple-50 p-3 rounded-lg">
+                    <div className="bg-purple-100 p-3 rounded-lg">
                       <div className="text-sm text-gray-600">Accessibility</div>
                       <div className="text-2xl font-bold text-purple-600">{result.accessibility}</div>
                     </div>
-                    <div className="bg-orange-50 p-3 rounded-lg">
+                    <div className="bg-orange-100 p-3 rounded-lg">
                       <div className="text-sm text-gray-600">Best Practices</div>
                       <div className="text-2xl font-bold text-orange-600">{result.best_practices}</div>
                     </div>
-                    <div className="bg-indigo-50 p-3 rounded-lg">
+                    <div className="bg-indigo-100 p-3 rounded-lg">
                       <div className="text-sm text-gray-600">SEO</div>
                       <div className="text-2xl font-bold text-indigo-600">{result.seo}</div>
                     </div>
                   </div>
 
-                  {/* Detailed Analysis */}
+                  {/* Critical DOM Issues Summary */}
+                  <div className="bg-white border-2 border-red-300 rounded-lg p-4 mb-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <div className="text-lg font-semibold text-red-700">🚨 DOM Analysis Summary</div>
+                        <div className="text-sm text-gray-600">Critical technical issues that may impact SERP performance</div>
+                      </div>
+                      <div className="text-right">
+                        <div className="text-3xl font-bold text-red-600">{result.dom_errors}</div>
+                        <div className="text-sm text-gray-500">DOM Errors</div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Show detailed analysis if expanded */}
                   {showDetails[index] && (
                     <div className="border-t pt-6">
                       <h4 className="text-lg font-semibold mb-4">📊 DOM & Resource Analysis</h4>
@@ -1002,49 +979,6 @@ export default function LighthouseDOMAnalyzer() {
                           </div>
                         </div>
                       )}
-                      {/* Performance Audit Results */}
-                      {result.audit_results && result.audit_results.length > 0 && (
-                        <div className="mb-6">
-                          <h4 className="text-lg font-semibold mb-4">📝 Performance Audit Results</h4>
-                          <div className="space-y-2">
-                            {result.audit_results
-                              .filter(audit => !audit.includes('DOM.pushNodeByPathToFrontend') && !audit.includes('LH:artifacts:getArtifact'))
-                              .map((audit, auditIndex) => (
-                              <div key={auditIndex}>
-                                <button
-                                  onClick={() => toggleAuditDetails(index, auditIndex)}
-                                  className="w-full text-left px-4 py-2 bg-gray-50 hover:bg-gray-100 rounded-lg flex items-center justify-between"
-                                >
-                                  <span className="text-sm font-mono">{audit}</span>
-                                  <div className="flex items-center gap-2">
-                                    <span className={`px-2 py-1 rounded text-xs ${
-                                      getAuditSeverity(audit) === 'HIGH' ? 'bg-red-100 text-red-700' :
-                                      getAuditSeverity(audit) === 'MEDIUM' ? 'bg-yellow-100 text-yellow-700' :
-                                      'bg-green-100 text-green-700'
-                                    }`}>
-                                      {getAuditSeverity(audit)}
-                                    </span>
-                                    <AlertCircle size={16} />
-                                  </div>
-                                </button>
-                                {showAuditDetails[`${index}-${auditIndex}`] && (
-                                  <div className="mt-2 ml-4 p-4 bg-blue-50 rounded-lg">
-                                    <div className="mb-2">
-                                      <strong>Description:</strong> {getAuditDescription(audit)}
-                                    </div>
-                                    <div className="mb-2">
-                                      <strong>How to fix:</strong> {getAuditFix(audit)}
-                                    </div>
-                                    <div className="text-sm text-gray-600">
-                                      <strong>Priority:</strong> {getAuditSeverity(audit)}
-                                    </div>
-                                  </div>
-                                )}
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
 
                       {/* Developer Insights */}
                       <div className="flex gap-4 mb-4">
@@ -1107,6 +1041,80 @@ export default function LighthouseDOMAnalyzer() {
               )}
             </div>
           ))}
+        </div>
+      )}
+
+      {/* Competitor Results */}
+      {competitorResults.length > 0 && (
+        <div className="mt-8">
+          <h3 className="text-xl font-semibold text-orange-600 mb-4">🥊 Competitor Analysis</h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {competitorResults.map((result, index) => (
+              <div key={index} className="bg-orange-50 border border-orange-300 rounded-lg p-4 shadow-sm">
+                <div className="mb-4">
+                  <h4 className="text-lg font-semibold text-gray-900 mb-2">
+                    Competitor {index + 1}
+                  </h4>
+                  <div className="text-sm text-gray-600 break-words">{result.url}</div>
+                </div>
+
+                {result.status === 'error' ? (
+                  <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+                    <div className="text-red-700 font-medium text-sm">❌ Error</div>
+                    <div className="text-red-600 text-xs mt-1">{result.error}</div>
+                  </div>
+                ) : (
+                  <>
+                    {/* Compact Scores */}
+                    <div className="grid grid-cols-2 gap-2 mb-4">
+                      <div className="bg-white p-2 rounded text-center">
+                        <div className="text-xs text-gray-500">Mobile Perf</div>
+                        <div className="font-bold text-blue-600">{result.performance_mobile}</div>
+                      </div>
+                      <div className="bg-white p-2 rounded text-center">
+                        <div className="text-xs text-gray-500">Desktop Perf</div>
+                        <div className="font-bold text-green-600">{result.performance_desktop}</div>
+                      </div>
+                      <div className="bg-white p-2 rounded text-center">
+                        <div className="text-xs text-gray-500">DOM Errors</div>
+                        <div className="font-bold text-red-600">{result.dom_errors}</div>
+                      </div>
+                      <div className="bg-white p-2 rounded text-center">
+                        <div className="text-xs text-gray-500">GSC Risk</div>
+                        <div className={`font-bold text-xs ${
+                          result.gsc_risk === 'LOW' ? 'text-green-600' :
+                          result.gsc_risk === 'MEDIUM' ? 'text-yellow-600' : 'text-red-600'
+                        }`}>
+                          {result.gsc_risk}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Quick comparison vs your site */}
+                    {results.length > 0 && results[0].status === 'success' && (
+                      <div className="bg-white p-3 rounded border">
+                        <div className="text-xs font-semibold mb-2">vs Your Site:</div>
+                        <div className="space-y-1 text-xs">
+                          <div className="flex justify-between">
+                            <span>Performance:</span>
+                            <span className={result.performance_mobile > results[0].performance_mobile ? 'text-red-600' : 'text-green-600'}>
+                              {result.performance_mobile > results[0].performance_mobile ? '👆 Better' : '👇 Worse'}
+                            </span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span>DOM Quality:</span>
+                            <span className={result.dom_errors < results[0].dom_errors ? 'text-red-600' : 'text-green-600'}>
+                              {result.dom_errors < results[0].dom_errors ? '👆 Better' : '👇 Worse'}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            ))}
+          </div>
         </div>
       )}
 
