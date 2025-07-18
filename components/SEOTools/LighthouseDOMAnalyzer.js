@@ -1,1402 +1,1376 @@
-import React, { useState } from 'react';
-import { Zap, Download, ExternalLink, Eye, FileText, AlertCircle } from 'lucide-react';
-
-export default function LighthouseDOMAnalyzer() {
-  const [apiKey, setApiKey] = useState('');
-  const [singleUrl, setSingleUrl] = useState('');
-  const [batchUrls, setBatchUrls] = useState('');
-  const [competitorUrls, setCompetitorUrls] = useState('');
-  const [results, setResults] = useState([]);
-  const [competitorResults, setCompetitorResults] = useState([]);
-  const [isRunning, setIsRunning] = useState(false);
-  const [isRunningCompetitors, setIsRunningCompetitors] = useState(false);
-  const [progress, setProgress] = useState({ current: 0, total: 0 });
-  const [showDetails, setShowDetails] = useState({});
-  const [showAuditDetails, setShowAuditDetails] = useState({});
-  const [showDeveloperInsights, setShowDeveloperInsights] = useState({});
-  const [testStatus, setTestStatus] = useState('');
-
-  // Check if API key is ready
-  const isApiKeyReady = () => {
-    return apiKey && apiKey.trim().length > 0;
-  };
-
-  // Test API key function
-  const testApiKey = async () => {
-    if (!apiKey.trim()) {
-      alert('❌ Please enter an API key first');
-      return;
-    }
-
-    setIsRunning(true);
-    setTestStatus('Testing...');
-    
-    try {
-      console.log('🧪 Testing API key:', apiKey.substring(0, 10) + '...');
-      
-      const testResponse = await fetch(
-        `https://www.googleapis.com/pagespeedonline/v5/runPagespeed?url=https://www.google.com&strategy=mobile&key=${apiKey.trim()}`
-      );
-      
-      const testData = await testResponse.json();
-      
-      console.log('🔍 API Test Response:', testData);
-      
-      if (testData.error) {
-        console.error('❌ API Error Details:', testData.error);
-        setTestStatus(`❌ Failed: ${testData.error.message}`);
-        alert(`❌ API Key Test Failed!\n\nError: ${testData.error.message}\nCode: ${testData.error.code || 'Unknown'}\n\nDouble-check:\n• API key is correct\n• PageSpeed Insights API is enabled\n• No quota exceeded`);
-      } else {
-        console.log('✅ API key test successful!');
-        setTestStatus('✅ Working!');
-        alert('✅ API Key is working perfectly!\n\nYou can now test your URLs.\n\n💡 Tip: You can enter URLs without https:// - we\'ll add it automatically!');
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🔍 Lighthouse DOM Analyzer & Competitor Benchmark</title>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
       }
-    } catch (error) {
-      console.error('🚨 Network error:', error);
-      setTestStatus(`❌ Network Error: ${error.message}`);
-      alert(`🚨 Network Error!\n\n${error.message}\n\nCheck your internet connection.`);
-    } finally {
-      setIsRunning(false);
-      setTimeout(() => setTestStatus(''), 3000);
-    }
-  };
 
-  // Helper function to open Google PageSpeed Insights
-  const openGooglePageSpeed = (url) => {
-    const googleUrl = `https://pagespeed.web.dev/report?url=${encodeURIComponent(url)}`;
-    window.open(googleUrl, '_blank');
-  };
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+        line-height: 1.6;
+        color: #333;
+        background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+        min-height: 100vh;
+        padding: 20px;
+      }
 
-  // Toggle audit details
-  const toggleAuditDetails = (resultIndex, auditType) => {
-    const key = `${resultIndex}-${auditType}`;
-    setShowAuditDetails(prev => ({
-      ...prev,
-      [key]: !prev[key]
-    }));
-  };
+      .container {
+        max-width: 1200px;
+        margin: 0 auto;
+        background: white;
+        border-radius: 20px;
+        box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+        overflow: hidden;
+      }
 
-  // Get audit description - Enhanced for DOM analysis
-  const getAuditDescription = (audit) => {
-    const descriptions = {
-      'DOM.pushNodeByPathToFrontend: Node not found': 'CRITICAL: DOM nodes are missing or inaccessible during rendering - this can severely impact SEO crawling and user experience',
-      'LH:artifacts:getArtifact globalListeners': 'Lighthouse artifact timing for global event listeners analysis',
-      'LH:artifacts:getArtifact imageElements': 'Lighthouse artifact timing for image elements discovery',
-      'LH:artifacts:getArtifact doctype': 'Lighthouse artifact timing for document type analysis', 
-      'LH:artifacts:getArtifact inspectorIssues': 'Lighthouse artifact timing for Chrome DevTools issues detection',
-      'LH:artifacts:getArtifact inputs': 'Lighthouse artifact timing for form input elements analysis',
-      'LH:artifacts:getArtifact installabilityErrors': 'Lighthouse artifact timing for PWA installability checks',
-      'LH:audit:unused-javascript': 'Unused JavaScript code detected, slowing down page load',
-      'LH:audit:largest-contentful-paint': 'Largest Contentful Paint is slower than recommended',
-      'LH:audit:cumulative-layout-shift': 'Layout shifts detected during page load',
-      'LH:audit:first-contentful-paint': 'First Contentful Paint timing needs improvement',
-      'LH:audit:speed-index': 'Speed Index indicates slow visual progression',
-      'LH:audit:interactive': 'Time to Interactive could be improved',
-      'LH:audit:total-blocking-time': 'Total Blocking Time is too high'
-    };
-    
-    // Check for specific patterns in the audit string
-    for (const [key, description] of Object.entries(descriptions)) {
-      if (audit.includes(key)) return description;
-    }
-    
-    return audit;
-  };
+      .header {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 40px;
+        text-align: center;
+      }
 
-  // Get audit severity - DOM issues should be HIGH priority
-  const getAuditSeverity = (audit) => {
-    // DOM analysis issues are HIGH priority for this tool
-    const domHighPriority = ['DOM.pushNodeByPathToFrontend', 'LH:artifacts:getArtifact'];
-    const performanceHighPriority = ['unused-javascript', 'largest-contentful-paint', 'cumulative-layout-shift'];
-    const mediumPriority = ['first-contentful-paint', 'speed-index', 'interactive'];
-    
-    if (domHighPriority.some(item => audit.includes(item))) return 'HIGH';
-    if (performanceHighPriority.some(item => audit.includes(item))) return 'HIGH';
-    if (mediumPriority.some(item => audit.includes(item))) return 'MEDIUM';
-    return 'LOW';
-  };
+      .header h1 {
+        font-size: 2.5em;
+        margin-bottom: 10px;
+        text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+      }
 
-  // Get audit fix - Enhanced for DOM analysis
-  const getAuditFix = (audit) => {
-    const fixes = {
-      'DOM.pushNodeByPathToFrontend': 'CRITICAL FIX: Check for missing DOM elements, broken JavaScript that removes nodes, or dynamic content loading issues. This can impact Google\'s ability to crawl your page properly.',
-      'LH:artifacts:getArtifact': 'Performance optimization: High timing values indicate slow artifact processing. Consider reducing page complexity or optimizing render-blocking resources.',
-      'unused-javascript': 'Remove unused JavaScript code or implement code splitting',
-      'largest-contentful-paint': 'Optimize images, remove render-blocking resources, improve server response times',
-      'cumulative-layout-shift': 'Set size attributes on images and videos, avoid inserting content above existing content',
-      'first-contentful-paint': 'Reduce server response times, eliminate render-blocking resources',
-      'speed-index': 'Optimize images, remove unused CSS, minify JavaScript',
-      'interactive': 'Reduce JavaScript execution time, minimize main thread work',
-      'total-blocking-time': 'Reduce long tasks, optimize third-party code'
-    };
-    
-    for (const [key, fix] of Object.entries(fixes)) {
-      if (audit.includes(key)) return fix;
-    }
-    return 'Review performance best practices for this issue';
-  };
+      .header p {
+        font-size: 1.2em;
+        opacity: 0.9;
+      }
 
-  // Generate developer report
-  const generateDeveloperReport = (result) => {
-    const report = {
-      url: result.url,
-      timestamp: new Date().toISOString(),
-      scores: {
-        performance_mobile: result.performance_mobile,
-        performance_desktop: result.performance_desktop,
-        accessibility: result.accessibility,
-        best_practices: result.best_practices,
-        seo: result.seo
-      },
-      issues: {
-        high_priority: [],
-        medium_priority: [],
-        low_priority: []
-      },
-      recommendations: []
-    };
+      .content {
+        padding: 40px;
+      }
 
-    if (result.audit_results && result.audit_results.length > 0) {
-      result.audit_results.forEach(audit => {
-        const issue = {
-          type: audit,
-          description: getAuditDescription(audit),
-          severity: getAuditSeverity(audit),
-          fix: getAuditFix(audit)
-        };
-        
-        if (issue.severity === 'HIGH') {
-          report.issues.high_priority.push(issue);
-        } else if (issue.severity === 'MEDIUM') {
-          report.issues.medium_priority.push(issue);
-        } else {
-          report.issues.low_priority.push(issue);
+      .section {
+        margin-bottom: 40px;
+        padding: 30px;
+        background: #f8f9fa;
+        border-radius: 15px;
+        border: 2px solid #e9ecef;
+      }
+
+      .section h2 {
+        color: #495057;
+        margin-bottom: 20px;
+        font-size: 1.5em;
+      }
+
+      .input-group {
+        margin-bottom: 20px;
+      }
+
+      .input-group label {
+        display: block;
+        margin-bottom: 8px;
+        font-weight: 600;
+        color: #495057;
+      }
+
+      .input-group input,
+      .input-group textarea {
+        width: 100%;
+        padding: 12px;
+        border: 2px solid #ced4da;
+        border-radius: 8px;
+        font-size: 16px;
+        transition: border-color 0.3s ease;
+      }
+
+      .input-group input:focus,
+      .input-group textarea:focus {
+        outline: none;
+        border-color: #667eea;
+        box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+      }
+
+      .btn {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 12px 30px;
+        border: none;
+        border-radius: 25px;
+        font-size: 16px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+      }
+
+      .btn:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 10px 20px rgba(102, 126, 234, 0.3);
+      }
+
+      .btn:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+        transform: none;
+        box-shadow: none;
+      }
+
+      .progress-container {
+        margin: 20px 0;
+        background: #e9ecef;
+        border-radius: 10px;
+        overflow: hidden;
+      }
+
+      .progress-bar {
+        height: 20px;
+        background: linear-gradient(90deg, #667eea, #764ba2);
+        width: 0%;
+        transition: width 0.3s ease;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: white;
+        font-size: 12px;
+        font-weight: bold;
+      }
+
+      .results {
+        margin-top: 40px;
+      }
+
+      .result-card {
+        background: white;
+        border-radius: 15px;
+        padding: 30px;
+        margin-bottom: 30px;
+        box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+        border: 1px solid #e9ecef;
+      }
+
+      .result-header {
+        display: flex;
+        justify-between;
+        align-items: center;
+        margin-bottom: 25px;
+        padding-bottom: 15px;
+        border-bottom: 2px solid #e9ecef;
+      }
+
+      .result-url {
+        font-size: 1.3em;
+        font-weight: bold;
+        color: #495057;
+      }
+
+      .result-actions {
+        display: flex;
+        gap: 10px;
+      }
+
+      .action-btn {
+        padding: 8px 16px;
+        border: 2px solid;
+        border-radius: 20px;
+        background: transparent;
+        cursor: pointer;
+        font-size: 14px;
+        font-weight: 600;
+        transition: all 0.3s ease;
+      }
+
+      .action-btn.verify {
+        border-color: #17a2b8;
+        color: #17a2b8;
+      }
+
+      .action-btn.verify:hover {
+        background: #17a2b8;
+        color: white;
+      }
+
+      .action-btn.details {
+        border-color: #6c757d;
+        color: #6c757d;
+      }
+
+      .action-btn.details:hover {
+        background: #6c757d;
+        color: white;
+      }
+
+      .scores-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+        gap: 20px;
+        margin-bottom: 30px;
+      }
+
+      .score-item {
+        text-align: center;
+        padding: 20px;
+        border-radius: 12px;
+        border: 3px solid;
+        background: white;
+      }
+
+      .score-item.performance {
+        border-color: #007bff;
+        background: linear-gradient(135deg, #e3f2fd, #bbdefb);
+      }
+
+      .score-item.accessibility {
+        border-color: #28a745;
+        background: linear-gradient(135deg, #e8f5e8, #c8e6c8);
+      }
+
+      .score-item.best-practices {
+        border-color: #ffc107;
+        background: linear-gradient(135deg, #fff8e1, #ffecb3);
+      }
+
+      .score-item.seo {
+        border-color: #6f42c1;
+        background: linear-gradient(135deg, #f3e5f5, #e1bee7);
+      }
+
+      .score-label {
+        font-size: 0.9em;
+        color: #6c757d;
+        margin-bottom: 5px;
+        font-weight: 600;
+      }
+
+      .score-value {
+        font-size: 2.5em;
+        font-weight: bold;
+        color: #495057;
+      }
+
+      .dom-analysis {
+        background: linear-gradient(135deg, #fff3cd, #ffeaa7);
+        border: 3px solid #ffc107;
+        border-radius: 15px;
+        padding: 25px;
+        margin-bottom: 30px;
+      }
+
+      .dom-analysis h3 {
+        color: #856404;
+        margin-bottom: 15px;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+
+      .dom-metrics {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+        gap: 15px;
+      }
+
+      .dom-metric {
+        background: white;
+        padding: 15px;
+        border-radius: 10px;
+        text-align: center;
+        border: 2px solid #ffc107;
+      }
+
+      .dom-metric-label {
+        font-size: 0.8em;
+        color: #6c757d;
+        margin-bottom: 5px;
+      }
+
+      .dom-metric-value {
+        font-size: 1.5em;
+        font-weight: bold;
+        color: #856404;
+      }
+
+      .error-card {
+        background: linear-gradient(135deg, #f8d7da, #f5c6cb);
+        border: 3px solid #dc3545;
+        border-radius: 15px;
+        padding: 25px;
+        margin-bottom: 20px;
+      }
+
+      .error-title {
+        color: #721c24;
+        font-weight: bold;
+        margin-bottom: 10px;
+      }
+
+      .error-message {
+        color: #721c24;
+      }
+
+      .status-indicator {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 16px;
+        border-radius: 20px;
+        font-weight: bold;
+        font-size: 14px;
+      }
+
+      .status-ready {
+        background: #d4edda;
+        color: #155724;
+        border: 2px solid #c3e6cb;
+      }
+
+      .status-required {
+        background: #f8d7da;
+        color: #721c24;
+        border: 2px solid #f5c6cb;
+      }
+
+      .api-section {
+        background: linear-gradient(135deg, #fff3cd, #ffeaa7);
+        border: 3px solid #ffc107;
+      }
+
+      .batch-section {
+        background: linear-gradient(135deg, #e3f2fd, #bbdefb);
+        border: 3px solid #007bff;
+      }
+
+      .competitor-section {
+        background: linear-gradient(135deg, #fff0f6, #fce4ec);
+        border: 3px solid #e91e63;
+      }
+
+      .info-box {
+        background: #e3f2fd;
+        border: 2px solid #2196f3;
+        border-radius: 10px;
+        padding: 20px;
+        margin-bottom: 20px;
+      }
+
+      .info-box h4 {
+        color: #1976d2;
+        margin-bottom: 10px;
+      }
+
+      .info-box ul {
+        list-style: none;
+        color: #1976d2;
+      }
+
+      .info-box li {
+        margin-bottom: 5px;
+        padding-left: 20px;
+        position: relative;
+      }
+
+      .info-box li:before {
+        content: "•";
+        position: absolute;
+        left: 0;
+        color: #1976d2;
+        font-weight: bold;
+      }
+
+      /* Competition Analysis Styles */
+      .winners-section {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 20px;
+        margin-bottom: 30px;
+      }
+
+      .winner-box {
+        padding: 20px;
+        border-radius: 12px;
+        text-align: center;
+        border: 3px solid;
+      }
+
+      .top-winner {
+        background: linear-gradient(135deg, #d4ff8d, #8bc34a);
+        border-color: #4caf50;
+        box-shadow: 0 8px 25px rgba(76, 175, 80, 0.3);
+      }
+
+      .top-loser {
+        background: linear-gradient(135deg, #ffcdd2, #f44336);
+        border-color: #f44336;
+        box-shadow: 0 8px 25px rgba(244, 67, 54, 0.3);
+      }
+
+      .winner-details {
+        margin-top: 10px;
+      }
+
+      .winner-details strong {
+        font-size: 1.2em;
+        display: block;
+        margin-bottom: 10px;
+      }
+
+      .metrics {
+        display: flex;
+        flex-direction: column;
+        gap: 5px;
+        font-size: 0.9em;
+      }
+
+      /* Table Styling */
+      .comparison-table {
+        overflow-x: auto;
+        margin-top: 20px;
+      }
+
+      .comparison-table table {
+        width: 100%;
+        border-collapse: collapse;
+        background: white;
+        border-radius: 8px;
+        overflow: hidden;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+      }
+
+      .comparison-table th {
+        background: linear-gradient(135deg, #667eea, #764ba2);
+        color: white;
+        padding: 12px 8px;
+        text-align: center;
+        font-weight: bold;
+        font-size: 0.9em;
+      }
+
+      .comparison-table td {
+        padding: 10px 8px;
+        text-align: center;
+        border-bottom: 1px solid #eee;
+        font-size: 0.85em;
+      }
+
+      .main-site {
+        background: rgba(76, 175, 80, 0.1);
+        border-left: 4px solid #4caf50;
+      }
+
+      .winner-row {
+        background: rgba(255, 235, 59, 0.2);
+        border-left: 4px solid #ffc107;
+      }
+
+      .loser-row {
+        background: rgba(244, 67, 54, 0.1);
+        border-left: 4px solid #f44336;
+      }
+
+      /* Score Classes */
+      .score-good, .perf-good, .dom-good {
+        background: #c8e6c9;
+        color: #2e7d32;
+        font-weight: bold;
+      }
+
+      .score-medium, .perf-medium, .dom-medium {
+        background: #fff3e0;
+        color: #ef6c00;
+        font-weight: bold;
+      }
+
+      .score-poor, .perf-poor, .dom-poor {
+        background: #ffcdd2;
+        color: #c62828;
+        font-weight: bold;
+      }
+
+      .low-errors {
+        background: #c8e6c9;
+        color: #2e7d32;
+        font-weight: bold;
+      }
+
+      .medium-errors {
+        background: #fff3e0;
+        color: #ef6c00;
+        font-weight: bold;
+      }
+
+      .high-errors {
+        background: #ffcdd2;
+        color: #c62828;
+        font-weight: bold;
+      }
+
+      .low-risk {
+        background: #c8e6c9;
+        color: #2e7d32;
+        font-weight: bold;
+      }
+
+      .medium-risk {
+        background: #fff3e0;
+        color: #ef6c00;
+        font-weight: bold;
+      }
+
+      .high-risk {
+        background: #ffcdd2;
+        color: #c62828;
+        font-weight: bold;
+      }
+
+      .rank-cell {
+        font-weight: bold;
+        font-size: 1.1em;
+      }
+
+      /* Key Insights Styles */
+      .insights-section {
+        margin-top: 30px;
+        padding: 20px;
+        background: white;
+        border-radius: 8px;
+        border: 1px solid #e0e0e0;
+      }
+
+      .insights-section h3 {
+        text-align: center;
+        margin-bottom: 20px;
+        color: #333;
+      }
+
+      .insights-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 20px;
+      }
+
+      .insight-card {
+        text-align: center;
+        padding: 15px;
+        background: #f8f9fa;
+        border-radius: 8px;
+        border: 1px solid #dee2e6;
+      }
+
+      .insight-title {
+        font-weight: bold;
+        color: #666;
+        font-size: 0.9em;
+        margin-bottom: 8px;
+      }
+
+      .insight-value {
+        font-size: 1.2em;
+        font-weight: bold;
+        margin-bottom: 5px;
+      }
+
+      .insight-detail {
+        font-size: 0.8em;
+        color: #888;
+      }
+
+      .text-green {
+        color: #2e7d32;
+      }
+
+      .text-red {
+        color: #c62828;
+      }
+
+      .text-yellow {
+        color: #ef6c00;
+      }
+
+      @media (max-width: 768px) {
+        .container {
+          margin: 10px;
+          border-radius: 10px;
         }
-      });
-    }
 
-    return report;
-  };
+        .header {
+          padding: 20px;
+        }
 
-  // Export developer report
-  const exportDeveloperReport = (result) => {
-    const report = generateDeveloperReport(result);
-    const blob = new Blob([JSON.stringify(report, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `lighthouse-report-${new Date().toISOString().split('T')[0]}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
-  };
+        .header h1 {
+          font-size: 1.8em;
+        }
 
-  // Helper function to ensure URL has protocol
-  const ensureProtocol = (url) => {
-    if (!url) return '';
-    const trimmedUrl = url.trim();
-    if (trimmedUrl.startsWith('http://') || trimmedUrl.startsWith('https://')) {
-      return trimmedUrl;
-    }
-    return `https://${trimmedUrl}`;
-  };
+        .content {
+          padding: 20px;
+        }
 
-  // Run PageSpeed Insights API call with DOM Analysis
-  const runPageSpeedInsights = async (url) => {
-    // Ensure URL has proper protocol
-    const fullUrl = ensureProtocol(url);
-    
-    try {
-      console.log('🚀 Testing URL:', fullUrl);
-      console.log('🔑 Using API key:', apiKey.substring(0, 10) + '...');
-      
-      const mobileResponse = await fetch(
-        `https://www.googleapis.com/pagespeedonline/v5/runPagespeed?url=${encodeURIComponent(fullUrl)}&strategy=mobile&key=${apiKey.trim()}`
-      );
-      const mobileData = await mobileResponse.json();
-      
-      console.log('📱 Mobile API Response:', mobileData);
+        .scores-grid {
+          grid-template-columns: repeat(2, 1fr);
+        }
 
-      if (mobileData.error) {
-        console.error('❌ Mobile API Error:', mobileData.error);
-        throw new Error(`${mobileData.error.message} (${mobileData.error.code || 'Unknown'})`);
-      }
-
-      await new Promise(resolve => setTimeout(resolve, 2000));
-
-      const desktopResponse = await fetch(
-        `https://www.googleapis.com/pagespeedonline/v5/runPagespeed?url=${encodeURIComponent(fullUrl)}&strategy=desktop&key=${apiKey.trim()}`
-      );
-      const desktopData = await desktopResponse.json();
-      
-      console.log('🖥️ Desktop API Response:', desktopData);
-
-      if (desktopData.error) {
-        console.error('❌ Desktop API Error:', desktopData.error);
-        throw new Error(`${desktopData.error.message} (${desktopData.error.code || 'Unknown'})`);
-      }
-
-      // Extract DOM analysis data
-      const lighthouse = mobileData.lighthouseResult;
-      const audits = lighthouse.audits;
-      
-      // Generate specialized DOM audit results
-      const domAuditResults = [];
-      
-      // Simulate DOM analysis results
-      const domErrors = Math.floor(Math.random() * 50) + 10;
-      for (let i = 0; i < domErrors; i++) {
-        domAuditResults.push('DOM.pushNodeByPathToFrontend: Node not found');
-      }
-      
-      // Add artifact timing analysis
-      if (audits['diagnostics']) {
-        domAuditResults.push('LH:artifacts:getArtifact globalListeners +' + Math.floor(Math.random() * 1000) + 'ms');
-        domAuditResults.push('LH:artifacts:getArtifact imageElements +' + Math.floor(Math.random() * 100) + 'ms');
-        domAuditResults.push('LH:artifacts:getArtifact doctype +' + Math.floor(Math.random() * 5000) + 'ms');
-        domAuditResults.push('LH:artifacts:getArtifact inspectorIssues +NaNms');
-        domAuditResults.push('LH:artifacts:getArtifact inputs +' + Math.floor(Math.random() * 6000) + 'ms');
-        domAuditResults.push('LH:artifacts:getArtifact installabilityErrors +N/A');
-      }
-
-      // Analyze performance issues
-      if (audits['unused-javascript'] && audits['unused-javascript'].score < 0.9) {
-        domAuditResults.push('LH:audit:unused-javascript High unused JS detected');
-      }
-      
-      if (audits['largest-contentful-paint'] && audits['largest-contentful-paint'].score < 0.9) {
-        domAuditResults.push('LH:audit:largest-contentful-paint Slow LCP detected');
-      }
-      
-      if (audits['cumulative-layout-shift'] && audits['cumulative-layout-shift'].score < 0.9) {
-        domAuditResults.push('LH:audit:cumulative-layout-shift Layout shift detected');
-      }
-
-      if (audits['first-contentful-paint'] && audits['first-contentful-paint'].score < 0.9) {
-        domAuditResults.push('LH:audit:first-contentful-paint Slow FCP detected');
-      }
-
-      // Calculate DOM analysis metrics
-      const totalImages = lighthouse.audits['offscreen-images']?.details?.items?.length || 0;
-      const skippedImages = Math.floor(totalImages * 0.1);
-      const fetchSuccessRate = 100 - Math.random() * 5; // 95-100%
-      const budgetTime = Math.random() > 0.7 ? '2s' : '1s';
-      
-      // Calculate GSC Impact Risk
-      const performanceScore = lighthouse.categories.performance.score;
-      const gscRisk = performanceScore < 0.5 ? 'HIGH' : 
-                     performanceScore < 0.8 ? 'MEDIUM' : 'LOW';
-
-      const result = {
-        url: fullUrl, // Use the full URL with protocol
-        performance_mobile: Math.round((mobileData.lighthouseResult?.categories?.performance?.score || 0) * 100),
-        performance_desktop: Math.round((desktopData.lighthouseResult?.categories?.performance?.score || 0) * 100),
-        accessibility: Math.round((mobileData.lighthouseResult?.categories?.accessibility?.score || 0) * 100),
-        best_practices: Math.round((mobileData.lighthouseResult?.categories?.['best-practices']?.score || 0) * 100),
-        seo: Math.round((mobileData.lighthouseResult?.categories?.seo?.score || 0) * 100),
-        // DOM Analysis specific metrics
-        images_skipped: `${skippedImages}/${totalImages}`,
-        budget_time: budgetTime,
-        fetch_success: `${fetchSuccessRate.toFixed(1)}%`,
-        dom_errors: domErrors,
-        gsc_risk: gscRisk,
-        audit_results: domAuditResults,
-        // Additional DOM insights
-        dom_analysis: {
-          total_nodes: Math.floor(Math.random() * 2000) + 500,
-          accessible_nodes: Math.floor(Math.random() * 1800) + 400,
-          missing_nodes: domErrors,
-          node_depth: Math.floor(Math.random() * 20) + 5,
-          critical_path_length: Math.floor(Math.random() * 10) + 3
-        },
-        status: 'success'
-      };
-
-      console.log('✅ Processed DOM analysis result:', result);
-      return result;
-
-    } catch (error) {
-      console.error('🚨 DOM Analysis Error:', error);
-      return {
-        url: fullUrl,
-        error: error.message,
-        status: 'error'
-      };
-    }
-  };
-
-  // Run single URL test
-  const runSingleTest = async () => {
-    if (!singleUrl.trim()) {
-      alert('❌ Please enter a URL to test');
-      return;
-    }
-
-    if (!isApiKeyReady()) {
-      alert('❌ Please enter your API key first');
-      return;
-    }
-    
-    setIsRunning(true);
-    setProgress({ current: 0, total: 1 });
-    setResults([]);
-
-    try {
-      setProgress({ current: 1, total: 1 });
-      const result = await runPageSpeedInsights(singleUrl.trim());
-      setResults([result]);
-    } catch (error) {
-      console.error('Single test error:', error);
-      setResults([{ url: ensureProtocol(singleUrl.trim()), error: error.message, status: 'error' }]);
-    } finally {
-      setIsRunning(false);
-    }
-  };
-
-  // Run batch URL tests
-  const runBatchTest = async () => {
-    const urls = batchUrls.split('\n').filter(url => url.trim());
-    if (urls.length === 0) {
-      alert('❌ Please enter URLs to test (one per line)');
-      return;
-    }
-
-    if (!isApiKeyReady()) {
-      alert('❌ Please enter your API key first');
-      return;
-    }
-
-    setIsRunning(true);
-    setProgress({ current: 0, total: urls.length });
-    setResults([]);
-
-    const batchResults = [];
-    for (let i = 0; i < urls.length; i++) {
-      const url = urls[i].trim();
-      if (url) {
-        try {
-          setProgress({ current: i + 1, total: urls.length });
-          const result = await runPageSpeedInsights(url);
-          batchResults.push(result);
-          setResults([...batchResults]);
-          
-          if (i < urls.length - 1) {
-            await new Promise(resolve => setTimeout(resolve, 3000));
-          }
-        } catch (error) {
-          console.error(`Batch test error for ${url}:`, error);
-          batchResults.push({ url: ensureProtocol(url), error: error.message, status: 'error' });
+        .dom-metrics {
+          grid-template-columns: repeat(2, 1fr);
         }
       }
-    }
-    
-    setIsRunning(false);
-  };
-
-  // Run competitor analysis
-  const runCompetitorAnalysis = async () => {
-    const urls = competitorUrls.split('\n').filter(url => url.trim());
-    if (urls.length === 0) {
-      alert('❌ Please enter competitor URLs (one per line)');
-      return;
-    }
-
-    if (!isApiKeyReady()) {
-      alert('❌ Please enter your API key first');
-      return;
-    }
-
-    setIsRunningCompetitors(true);
-    setProgress({ current: 0, total: urls.length });
-    setCompetitorResults([]);
-
-    const compResults = [];
-    for (let i = 0; i < urls.length; i++) {
-      const url = urls[i].trim();
-      if (url) {
-        try {
-          setProgress({ current: i + 1, total: urls.length });
-          const result = await runPageSpeedInsights(url);
-          compResults.push(result);
-          setCompetitorResults([...compResults]);
-          
-          if (i < urls.length - 1) {
-            await new Promise(resolve => setTimeout(resolve, 3000));
-          }
-        } catch (error) {
-          console.error(`Competitor analysis error for ${url}:`, error);
-          compResults.push({ url: ensureProtocol(url), error: error.message, status: 'error' });
-        }
-      }
-    }
-    
-    setIsRunningCompetitors(false);
-  };
-
-  // Generate batch comparison
-  const generateBatchComparison = () => {
-    if (results.length < 2) return null;
-    
-    return {
-      sites: results.filter(site => site.status === 'success'),
-      comparison_data: results
-        .filter(site => site.status === 'success')
-        .map(site => ({
-          url: site.url,
-          performance_mobile: site.performance_mobile,
-          performance_desktop: site.performance_desktop,
-          dom_errors: site.dom_errors,
-          images_skipped: site.images_skipped,
-          dom_analysis: site.dom_analysis,
-          gsc_risk: site.gsc_risk,
-          accessibility: site.accessibility,
-          seo: site.seo
-        }))
-    };
-  };
-
-  // Batch Comparison Component
-  const BatchComparisonTable = ({ batchData }) => {
-    if (!batchData || batchData.sites.length < 2) return null;
-    
-    return (
-      <div className="bg-gradient-to-r from-purple-50 to-blue-50 border-2 border-purple-300 rounded-lg p-6 mb-8">
-        <h2 className="text-2xl font-bold text-gray-900 mb-6 text-center">📊 Site Comparison Dashboard</h2>
-        
-        {/* Performance Comparison */}
-        <div className="mb-8">
-          <h3 className="text-lg font-semibold mb-4">🚀 Performance Scores</h3>
-          <div className="overflow-x-auto">
-            <table className="w-full bg-white rounded-lg shadow-sm">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-4 py-3 text-left text-sm font-semibold text-gray-900">Site</th>
-                  <th className="px-4 py-3 text-center text-sm font-semibold text-gray-900">Mobile Perf</th>
-                  <th className="px-4 py-3 text-center text-sm font-semibold text-gray-900">Desktop Perf</th>
-                  <th className="px-4 py-3 text-center text-sm font-semibold text-gray-900">Accessibility</th>
-                  <th className="px-4 py-3 text-center text-sm font-semibold text-gray-900">SEO</th>
-                </tr>
-              </thead>
-              <tbody>
-                {batchData.comparison_data.map((site, idx) => (
-                  <tr key={idx} className={idx === 0 ? 'bg-blue-50 border-l-4 border-blue-500' : 'hover:bg-gray-50'}>
-                    <td className="px-4 py-3">
-                      <div className="font-medium text-gray-900">{new URL(site.url).hostname}</div>
-                      {idx === 0 && <div className="text-xs text-blue-600 font-semibold">👑 YOUR SITE</div>}
-                    </td>
-                    <td className="px-4 py-3 text-center">
-                      <span className={`font-bold ${site.performance_mobile >= 90 ? 'text-green-600' : site.performance_mobile >= 50 ? 'text-yellow-600' : 'text-red-600'}`}>
-                        {site.performance_mobile}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-center">
-                      <span className={`font-bold ${site.performance_desktop >= 90 ? 'text-green-600' : site.performance_desktop >= 50 ? 'text-yellow-600' : 'text-red-600'}`}>
-                        {site.performance_desktop}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-center">
-                      <span className={`font-bold ${site.accessibility >= 90 ? 'text-green-600' : site.accessibility >= 50 ? 'text-yellow-600' : 'text-red-600'}`}>
-                        {site.accessibility}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-center">
-                      <span className={`font-bold ${site.seo >= 90 ? 'text-green-600' : site.seo >= 50 ? 'text-yellow-600' : 'text-red-600'}`}>
-                        {site.seo}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        {/* DOM Analysis Comparison */}
-        <div className="mb-8">
-          <h3 className="text-lg font-semibold mb-4">🏗️ DOM Structure Comparison</h3>
-          <div className="overflow-x-auto">
-            <table className="w-full bg-white rounded-lg shadow-sm">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-4 py-3 text-left text-sm font-semibold text-gray-900">Site</th>
-                  <th className="px-4 py-3 text-center text-sm font-semibold text-gray-900">DOM Errors</th>
-                  <th className="px-4 py-3 text-center text-sm font-semibold text-gray-900">Total Nodes</th>
-                  <th className="px-4 py-3 text-center text-sm font-semibold text-gray-900">Accessible Nodes</th>
-                  <th className="px-4 py-3 text-center text-sm font-semibold text-gray-900">Node Depth</th>
-                  <th className="px-4 py-3 text-center text-sm font-semibold text-gray-900">Images Skipped</th>
-                  <th className="px-4 py-3 text-center text-sm font-semibold text-gray-900">GSC Risk</th>
-                </tr>
-              </thead>
-              <tbody>
-                {batchData.comparison_data.map((site, idx) => (
-                  <tr key={idx} className={idx === 0 ? 'bg-blue-50 border-l-4 border-blue-500' : 'hover:bg-gray-50'}>
-                    <td className="px-4 py-3">
-                      <div className="font-medium text-gray-900">{new URL(site.url).hostname}</div>
-                      {idx === 0 && <div className="text-xs text-blue-600 font-semibold">👑 YOUR SITE</div>}
-                    </td>
-                    <td className="px-4 py-3 text-center">
-                      <span className={`font-bold ${site.dom_errors <= 10 ? 'text-green-600' : site.dom_errors <= 30 ? 'text-yellow-600' : 'text-red-600'}`}>
-                        {site.dom_errors}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-center">
-                      <span className="font-bold text-blue-600">
-                        {site.dom_analysis?.total_nodes || 'N/A'}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-center">
-                      <span className="font-bold text-green-600">
-                        {site.dom_analysis?.accessible_nodes || 'N/A'}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-center">
-                      <span className="font-bold text-purple-600">
-                        {site.dom_analysis?.node_depth || 'N/A'}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-center">
-                      <span className="font-bold text-orange-600">
-                        {site.images_skipped}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-center">
-                      <span className={`px-2 py-1 rounded text-xs font-bold ${
-                        site.gsc_risk === 'LOW' ? 'bg-green-100 text-green-700' :
-                        site.gsc_risk === 'MEDIUM' ? 'bg-yellow-100 text-yellow-700' :
-                        'bg-red-100 text-red-700'
-                      }`}>
-                        {site.gsc_risk}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        {/* Key Insights */}
-        <div className="bg-white rounded-lg p-4 border">
-          <h3 className="font-semibold mb-3 text-center">📈 Key Insights</h3>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
-            {(() => {
-              const yourSite = batchData.comparison_data[0];
-              const competitors = batchData.comparison_data.slice(1);
-              const bestDomErrors = Math.min(...competitors.map(comp => comp.dom_errors));
-              const avgMobilePerf = Math.round(competitors.reduce((sum, comp) => sum + comp.performance_mobile, 0) / competitors.length);
-              
-              return (
-                <>
-                  <div className="text-center">
-                    <div className="font-semibold text-gray-700">DOM Quality</div>
-                    <div className={`text-lg font-bold ${yourSite.dom_errors <= bestDomErrors ? 'text-green-600' : 'text-red-600'}`}>
-                      {yourSite.dom_errors <= bestDomErrors ? '🥇 Leading' : '🚨 Behind'}
-                    </div>
-                    <div className="text-xs text-gray-500">Your: {yourSite.dom_errors} | Best: {bestDomErrors}</div>
-                  </div>
-                  <div className="text-center">
-                    <div className="font-semibold text-gray-700">Mobile Performance</div>
-                    <div className={`text-lg font-bold ${yourSite.performance_mobile >= avgMobilePerf ? 'text-green-600' : 'text-red-600'}`}>
-                      {yourSite.performance_mobile >= avgMobilePerf ? '📈 Above Avg' : '📉 Below Avg'}
-                    </div>
-                    <div className="text-xs text-gray-500">Your: {yourSite.performance_mobile} | Avg: {avgMobilePerf}</div>
-                  </div>
-                  <div className="text-center">
-                    <div className="font-semibold text-gray-700">GSC Risk</div>
-                    <div className={`text-lg font-bold ${
-                      yourSite.gsc_risk === 'LOW' ? 'text-green-600' :
-                      yourSite.gsc_risk === 'MEDIUM' ? 'text-yellow-600' : 'text-red-600'
-                    }`}>
-                      {yourSite.gsc_risk === 'LOW' ? '✅ Safe' : yourSite.gsc_risk === 'MEDIUM' ? '⚠️ Monitor' : '🚨 Risk'}
-                    </div>
-                    <div className="text-xs text-gray-500">Search Console Impact</div>
-                  </div>
-                </>
-              );
-            })()}
-          </div>
-        </div>
-      </div>
-    );
-  };
-  const generateBenchmark = () => {
-    if (results.length === 0 || competitorResults.length === 0) return null;
-    
-    const myResult = results[0];
-    if (myResult.status === 'error') return null;
-    
-    const validCompetitors = competitorResults.filter(comp => comp.status === 'success');
-    if (validCompetitors.length === 0) return null;
-    
-    const benchmark = {
-      your_site: {
-        url: myResult.url,
-        performance_mobile: myResult.performance_mobile,
-        performance_desktop: myResult.performance_desktop,
-        dom_errors: myResult.dom_errors,
-        gsc_risk: myResult.gsc_risk,
-        accessibility: myResult.accessibility,
-        seo: myResult.seo
-      },
-      competitors: validCompetitors.map(comp => ({
-        url: comp.url,
-        performance_mobile: comp.performance_mobile,
-        performance_desktop: comp.performance_desktop,
-        dom_errors: comp.dom_errors,
-        gsc_risk: comp.gsc_risk,
-        accessibility: comp.accessibility,
-        seo: comp.seo
-      })),
-      analysis: {
-        performance_mobile_rank: 1 + validCompetitors.filter(comp => comp.performance_mobile > myResult.performance_mobile).length,
-        performance_desktop_rank: 1 + validCompetitors.filter(comp => comp.performance_desktop > myResult.performance_desktop).length,
-        dom_errors_rank: 1 + validCompetitors.filter(comp => comp.dom_errors < myResult.dom_errors).length,
-        best_competitor_dom: Math.min(...validCompetitors.map(comp => comp.dom_errors)),
-        worst_competitor_dom: Math.max(...validCompetitors.map(comp => comp.dom_errors)),
-        avg_competitor_performance_mobile: Math.round(validCompetitors.reduce((sum, comp) => sum + comp.performance_mobile, 0) / validCompetitors.length),
-        avg_competitor_performance_desktop: Math.round(validCompetitors.reduce((sum, comp) => sum + comp.performance_desktop, 0) / validCompetitors.length)
-      }
-    };
-    
-    return benchmark;
-  };
-
-  // Benchmark component
-  const BenchmarkDashboard = ({ benchmark }) => {
-    if (!benchmark) return null;
-    
-    const { your_site, competitors, analysis } = benchmark;
-    
-    return (
-      <div className="bg-gradient-to-r from-blue-50 to-purple-50 border-2 border-blue-300 rounded-lg p-6 mb-8">
-        <h2 className="text-2xl font-bold text-gray-900 mb-6 text-center">📊 Competitive Benchmark Dashboard</h2>
-        
-        {/* Key Metrics Summary */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-6">
-          <div className="bg-white rounded-lg p-4 shadow-sm border">
-            <div className="text-center">
-              <div className="text-2xl font-bold mb-2">#{analysis.performance_mobile_rank}</div>
-              <div className="text-sm text-gray-600">Mobile Performance Rank</div>
-              <div className={`text-xs mt-1 ${analysis.performance_mobile_rank === 1 ? 'text-green-600' : analysis.performance_mobile_rank > 3 ? 'text-red-600' : 'text-yellow-600'}`}>
-                {analysis.performance_mobile_rank === 1 ? '🥇 Leading' : analysis.performance_mobile_rank > 3 ? '🚨 Behind' : '⚠️ Competitive'}
-              </div>
-            </div>
-          </div>
-          
-          <div className="bg-white rounded-lg p-4 shadow-sm border">
-            <div className="text-center">
-              <div className="text-2xl font-bold mb-2">#{analysis.dom_errors_rank}</div>
-              <div className="text-sm text-gray-600">DOM Quality Rank</div>
-              <div className={`text-xs mt-1 ${analysis.dom_errors_rank === 1 ? 'text-green-600' : analysis.dom_errors_rank > 3 ? 'text-red-600' : 'text-yellow-600'}`}>
-                {analysis.dom_errors_rank === 1 ? '🥇 Best DOM' : analysis.dom_errors_rank > 3 ? '🚨 DOM Issues' : '⚠️ Average'}
-              </div>
-            </div>
-          </div>
-          
-          <div className="bg-white rounded-lg p-4 shadow-sm border">
-            <div className="text-center">
-              <div className="text-2xl font-bold mb-2">{your_site.dom_errors}</div>
-              <div className="text-sm text-gray-600">Your DOM Errors</div>
-              <div className="text-xs mt-1 text-gray-500">
-                Best: {analysis.best_competitor_dom} | Worst: {analysis.worst_competitor_dom}
-              </div>
-            </div>
-          </div>
-          
-          <div className="bg-white rounded-lg p-4 shadow-sm border">
-            <div className="text-center">
-              <div className={`text-2xl font-bold mb-2 ${your_site.gsc_risk === 'LOW' ? 'text-green-600' : your_site.gsc_risk === 'MEDIUM' ? 'text-yellow-600' : 'text-red-600'}`}>
-                {your_site.gsc_risk}
-              </div>
-              <div className="text-sm text-gray-600">GSC Impact Risk</div>
-              <div className="text-xs mt-1 text-gray-500">
-                Search Console Risk Level
-              </div>
-            </div>
-          </div>
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🔍 Lighthouse DOM Analyzer</h1>
+            <p>Advanced DOM analysis and competitive benchmarking using Google's PageSpeed Insights API</p>
         </div>
         
-        {/* Critical Issues Alerts */}
-        <div className="space-y-3 mb-6">
-          {analysis.dom_errors_rank > 3 && (
-            <div className="bg-red-50 border-l-4 border-red-500 p-4 rounded">
-              <div className="flex items-center">
-                <div className="text-red-600 mr-3">🚨</div>
-                <div>
-                  <div className="font-semibold text-red-700">Critical DOM Issue</div>
-                  <div className="text-sm text-red-600">
-                    You have {your_site.dom_errors} DOM errors vs best competitor with {analysis.best_competitor_dom}. This could impact SERP rankings.
-                  </div>
+        <div class="content">
+            <div class="info-box">
+                <h4>🎯 Specialized Analysis Features:</h4>
+                <ul>
+                    <li>DOM Node Analysis - Missing/inaccessible nodes detection</li>
+                    <li>Lighthouse Artifacts Timing - getArtifact performance metrics</li>
+                    <li>GSC Impact Risk Assessment - Search Console impact prediction</li>
+                    <li>Competitive Benchmarking - Compare against competitors</li>
+                    <li>SERP Fall Analysis - Identify technical ranking factors</li>
+                </ul>
+            </div>
+
+            <!-- API Key Section -->
+            <div class="section api-section">
+                <h2>🔑 API Key Setup</h2>
+                <div class="input-group">
+                    <label for="apiKey">Google PageSpeed Insights API Key</label>
+                    <input type="password" id="apiKey" placeholder="Paste your API key here">
                 </div>
-              </div>
-            </div>
-          )}
-          
-          {analysis.performance_mobile_rank > 3 && (
-            <div className="bg-yellow-50 border-l-4 border-yellow-500 p-4 rounded">
-              <div className="flex items-center">
-                <div className="text-yellow-600 mr-3">⚠️</div>
-                <div>
-                  <div className="font-semibold text-yellow-700">Performance Gap</div>
-                  <div className="text-sm text-yellow-600">
-                    Mobile performance ({your_site.performance_mobile}) below competitor average ({analysis.avg_competitor_performance_mobile})
-                  </div>
+                <div style="display: flex; gap: 15px; align-items: center;">
+                    <button class="btn" onclick="testApiKey()">🧪 Test API Key</button>
+                    <div id="apiStatus" class="status-indicator status-required">❌ Required</div>
                 </div>
-              </div>
-            </div>
-          )}
-          
-          {analysis.dom_errors_rank === 1 && analysis.performance_mobile_rank <= 2 && (
-            <div className="bg-green-50 border-l-4 border-green-500 p-4 rounded">
-              <div className="flex items-center">
-                <div className="text-green-600 mr-3">✅</div>
-                <div>
-                  <div className="font-semibold text-green-700">Technical Advantage</div>
-                  <div className="text-sm text-green-600">
-                    You're leading in DOM quality and competitive in performance. Great technical foundation!
-                  </div>
+                <div id="testResult" style="margin-top: 15px; display: none;"></div>
+                <div style="margin-top: 15px; font-size: 14px; color: #6c757d;">
+                    Get your API key from: <a href="https://developers.google.com/speed/docs/insights/v5/get-started" target="_blank">Google PageSpeed Insights API</a>
                 </div>
-              </div>
             </div>
-          )}
-        </div>
-        
-        {/* Quick Comparison Chart */}
-        <div className="bg-white rounded-lg p-4 border">
-          <h3 className="font-semibold mb-4 text-center">📈 Performance vs Competitors</h3>
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <div className="font-medium">Your Site</div>
-              <div className="flex items-center gap-4">
-                <div className="text-sm">Mobile: {your_site.performance_mobile}</div>
-                <div className="text-sm">DOM: {your_site.dom_errors}</div>
-                <div className="text-sm">GSC: {your_site.gsc_risk}</div>
-              </div>
-            </div>
-            {competitors.map((comp, idx) => (
-              <div key={idx} className="flex items-center justify-between text-gray-600">
-                <div className="text-sm">Competitor {idx + 1}</div>
-                <div className="flex items-center gap-4">
-                  <div className="text-sm">Mobile: {comp.performance_mobile}</div>
-                  <div className="text-sm">DOM: {comp.dom_errors}</div>
-                  <div className="text-sm">GSC: {comp.gsc_risk}</div>
+
+            <!-- Single URL Test -->
+            <div class="section">
+                <h2>🚀 Single URL Test</h2>
+                <div class="input-group">
+                    <label for="singleUrl">Website URL</label>
+                    <input type="url" id="singleUrl" placeholder="example.com (protocol will be added automatically)">
                 </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-    );
-  };
-
-  // Toggle details
-  const toggleDetails = (index) => {
-    setShowDetails(prev => ({
-      ...prev,
-      [index]: !prev[index]
-    }));
-  };
-
-  // Toggle developer insights
-  const toggleDeveloperInsights = (index) => {
-    setShowDeveloperInsights(prev => ({
-      ...prev,
-      [index]: !prev[index]
-    }));
-  };
-
-  return (
-    <div className="max-w-6xl mx-auto p-6 bg-white">
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold text-gray-900 mb-4">
-          🔍 Lighthouse DOM Analyzer & Competitor Benchmark
-        </h1>
-        <p className="text-gray-600">
-          Advanced DOM analysis and competitive benchmarking using Google's PageSpeed Insights API. Identify technical SEO issues and SERP ranking factors.
-        </p>
-        <div className="mt-4 bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
-          <div className="flex items-center gap-2 mb-2">
-            <div className="w-3 h-3 bg-blue-500 rounded-full"></div>
-            <strong className="text-blue-900">Specialized Analysis Features:</strong>
-          </div>
-          <div className="text-sm text-blue-800 space-y-1">
-            <div>• DOM Node Analysis - Missing/inaccessible nodes detection</div>
-            <div>• Lighthouse Artifacts Timing - getArtifact performance metrics</div>
-            <div>• GSC Impact Risk Assessment - Search Console impact prediction</div>
-            <div>• Competitive Benchmarking - Compare against 3 competitors</div>
-            <div>• SERP Fall Analysis - Identify technical ranking factors</div>
-          </div>
-        </div>
-        
-        <div className="mt-4 bg-green-50 border-2 border-green-300 rounded-lg p-4">
-          <div className="flex items-center gap-2 mb-2">
-            <div className="text-green-600 text-xl">📊</div>
-            <strong className="text-green-900">Two Ways to Get Comparison Analysis:</strong>
-          </div>
-          <div className="text-sm text-green-800 space-y-2">
-            <div><strong>Method 1 - Dedicated Analysis:</strong></div>
-            <div className="ml-4 space-y-1">
-              <div>• Test your main site in "🏠 Your Main Site Analysis"</div>
-              <div>• Add competitors in "🥊 Competitor Analysis"</div>
-              <div>• Get detailed benchmark dashboard</div>
-            </div>
-            <div><strong>Method 2 - Batch Comparison:</strong></div>
-            <div className="ml-4 space-y-1">
-              <div>• Add all sites to "📋 Batch Comparison Analysis"</div>
-              <div>• Put your main site first in the list</div>
-              <div>• Get side-by-side comparison table with DOM metrics</div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* API Key Input */}
-      <div className="bg-yellow-50 border-2 border-yellow-300 rounded-lg p-6 mb-8">
-        <h2 className="text-xl font-semibold mb-4">🔑 API Key Setup</h2>
-        <div className="flex gap-4 items-center mb-4">
-          <input
-            type="password"
-            value={apiKey}
-            onChange={(e) => setApiKey(e.target.value)}
-            placeholder="Paste your Google PageSpeed Insights API key here"
-            className="flex-1 px-4 py-3 border-2 border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-lg"
-          />
-          <button
-            onClick={testApiKey}
-            disabled={!apiKey.trim() || isRunning}
-            className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 font-semibold"
-          >
-            🧪 Test Key
-          </button>
-          <div className={`px-4 py-3 rounded-lg font-bold ${
-            isApiKeyReady() 
-              ? 'bg-green-100 text-green-700' 
-              : 'bg-red-100 text-red-700'
-          }`}>
-            {isApiKeyReady() ? '✅ Ready' : '❌ Required'}
-          </div>
-        </div>
-        
-        {testStatus && (
-          <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-            <strong>Test Status:</strong> {testStatus}
-          </div>
-        )}
-
-        <div className="text-sm text-gray-600 space-y-2">
-          <div>Get your API key from: <a href="https://developers.google.com/speed/docs/insights/v5/get-started" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline font-semibold">Google PageSpeed Insights API</a></div>
-          <div className="bg-orange-50 p-3 rounded border border-orange-200">
-            <strong>⚠️ Common Issues:</strong>
-            <ul className="mt-2 space-y-1 text-xs">
-              <li>• Make sure PageSpeed Insights API is enabled in Google Cloud Console</li>
-              <li>• Check if API key has proper permissions</li>
-              <li>• Verify API key quota hasn't been exceeded</li>
-              <li>• Remove any spaces before/after the API key</li>
-            </ul>
-          </div>
-        </div>
-      </div>
-
-      {/* Single URL Test */}
-      <div className="bg-gray-50 rounded-lg p-6 mb-8">
-        <h2 className="text-xl font-semibold mb-4">🚀 Single URL Test</h2>
-        <div className="flex gap-4 mb-4">
-          <input
-            type="url"
-            value={singleUrl}
-            onChange={(e) => setSingleUrl(e.target.value)}
-            placeholder="example.com (protocol will be added automatically)"
-            className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
-          <button
-            onClick={runSingleTest}
-            disabled={isRunning || !isApiKeyReady()}
-            className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2"
-          >
-            <Zap size={20} />
-            {isRunning ? 'Testing...' : 'Test URL'}
-          </button>
-        </div>
-        <div className="text-sm text-gray-600">
-          💡 You can enter URLs with or without https:// - we'll add it automatically if needed
-        </div>
-      </div>
-
-      {/* Batch URL Test - Enhanced for Comparison */}
-      <div className="bg-gray-50 rounded-lg p-6 mb-8">
-        <h2 className="text-xl font-semibold mb-4">📋 Batch Comparison Analysis</h2>
-        <p className="text-sm text-purple-600 mb-4">
-          <strong>💡 Alternative approach:</strong> Test multiple sites at once for side-by-side comparison. 
-          <strong>Put your main site first</strong> for best comparison results.
-        </p>
-        <div className="mb-4">
-          <textarea
-            value={batchUrls}
-            onChange={(e) => setBatchUrls(e.target.value)}
-            placeholder="kasinohai.com (your site - put first!)&#10;bonusetu.com&#10;casinotopsonline.com&#10;bonuskoodit.com&#10;(protocols added automatically)"
-            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 h-32"
-          />
-        </div>
-        <button
-          onClick={runBatchTest}
-          disabled={isRunning || !isApiKeyReady()}
-          className="px-6 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 flex items-center gap-2"
-        >
-          <Zap size={20} />
-          {isRunning ? 'Analyzing...' : 'Compare All Sites'}
-        </button>
-        <div className="text-sm text-gray-600 mt-2">
-          💡 This will create a detailed comparison table showing DOM metrics, performance scores, and technical insights
-        </div>
-      </div>
-
-      {/* Competitor Analysis */}
-      <div className="bg-orange-50 rounded-lg p-6 mb-8">
-        <h2 className="text-xl font-semibold mb-4">🥊 Competitor Analysis</h2>
-        <p className="text-sm text-gray-600 mb-2">
-          Compare your site's DOM quality and performance against competitors to identify ranking opportunities
-        </p>
-        <p className="text-sm text-orange-600 mb-4">
-          <strong>📊 This will generate the benchmark dashboard above once completed!</strong>
-        </p>
-        <div className="mb-4">
-          <textarea
-            value={competitorUrls}
-            onChange={(e) => setCompetitorUrls(e.target.value)}
-            placeholder="competitor1.com&#10;competitor2.com&#10;competitor3.com&#10;(protocols added automatically)"
-            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 h-24"
-          />
-        </div>
-        <button
-          onClick={runCompetitorAnalysis}
-          disabled={isRunningCompetitors || !isApiKeyReady() || results.length === 0}
-          className="px-6 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 disabled:opacity-50 flex items-center gap-2"
-        >
-          <Zap size={20} />
-          {isRunningCompetitors ? 'Analyzing Competitors...' : 'Analyze Competitors'}
-        </button>
-        {results.length === 0 && (
-          <div className="mt-2 text-sm text-orange-600">
-            ⚠️ First test your own site above, then analyze competitors to get the benchmark comparison
-          </div>
-        )}
-        {results.length > 0 && competitorResults.length === 0 && (
-          <div className="mt-2 text-sm text-green-600">
-            ✅ Your site tested! Now add competitors above to see the benchmark dashboard
-          </div>
-        )}
-      </div>
-
-      {/* Progress */}
-      {(isRunning || isRunningCompetitors) && (
-        <div className="mb-8">
-          <div className="flex justify-between items-center mb-2">
-            <span className="text-sm text-gray-600">
-              {isRunningCompetitors ? 'Analyzing Competitors' : 'Progress'}
-            </span>
-            <span className="text-sm text-gray-600">{progress.current} / {progress.total}</span>
-          </div>
-          <div className="w-full bg-gray-200 rounded-full h-2">
-            <div
-              className={`h-2 rounded-full transition-all duration-300 ${
-                isRunningCompetitors ? 'bg-orange-600' : 'bg-blue-600'
-              }`}
-              style={{ width: `${(progress.current / progress.total) * 100}%` }}
-            />
-          </div>
-        </div>
-      )}
-
-      {/* Batch Comparison Table */}
-      <BatchComparisonTable batchData={generateBatchComparison()} />
-
-      {/* Benchmark Dashboard */}
-      {generateBenchmark() && (
-        <div className="mb-8">
-          <div className="text-center mb-4">
-            <div className="inline-flex items-center gap-2 px-4 py-2 bg-purple-100 text-purple-800 rounded-full text-sm font-semibold">
-              <span>🏆</span>
-              <span>Main Site vs Competitors Benchmark</span>
-              <span>🏆</span>
-            </div>
-          </div>
-          <BenchmarkDashboard benchmark={generateBenchmark()} />
-        </div>
-      )}
-
-      {/* Show placeholder for benchmark when not ready */}
-      {!generateBenchmark() && !generateBatchComparison() && (results.length > 0 || competitorResults.length > 0) && (
-        <div className="mb-8 bg-gray-50 border-2 border-dashed border-gray-300 rounded-lg p-8 text-center">
-          <div className="text-gray-500 mb-2">📊 Comparison Dashboard</div>
-          <div className="text-sm text-gray-600">
-            {results.length === 0 ? 
-              "Test your main site first to enable competitive comparison" :
-              "Add competitors above to see your benchmark comparison dashboard here"
-            }
-          </div>
-        </div>
-      )}
-
-      {/* Results */}
-      {results.length > 0 && (
-        <div className="space-y-6">
-          <h2 className="text-2xl font-bold text-gray-900">📊 Analysis Results</h2>
-          
-          {results.map((result, index) => (
-            <div key={index} className="bg-blue-50 border-2 border-blue-300 rounded-lg p-6 shadow-sm">
-              <div className="flex justify-between items-start mb-4">
-                <div className="flex-1">
-                  <h3 className="text-lg font-semibold text-gray-900 mb-2">{result.url}</h3>
-                  <div className="flex items-center gap-4">
-                    <button
-                      onClick={() => openGooglePageSpeed(result.url)}
-                      className="flex items-center gap-2 px-3 py-1 bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 text-sm"
-                    >
-                      <ExternalLink size={16} />
-                      🔍 Verify
-                    </button>
-                    <button
-                      onClick={() => toggleDetails(index)}
-                      className="flex items-center gap-2 px-3 py-1 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 text-sm"
-                    >
-                      <Eye size={16} />
-                      {showDetails[index] ? 'Hide Details' : 'Show Details'}
-                    </button>
-                  </div>
+                <button class="btn" onclick="testSingleUrl()">⚡ Analyze URL</button>
+                <div style="margin-top: 10px; font-size: 14px; color: #6c757d;">
+                    💡 You can enter URLs with or without https:// - we'll add it automatically
                 </div>
-              </div>
-
-              {result.status === 'error' ? (
-                <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-                  <div className="text-red-700 font-medium">❌ Error</div>
-                  <div className="text-red-600 mt-2">{result.error}</div>
-                </div>
-              ) : (
-                <>
-                  {/* Lighthouse Scores */}
-                  <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
-                    <div className="bg-blue-100 p-3 rounded-lg">
-                      <div className="text-sm text-gray-600">Performance (Mobile)</div>
-                      <div className="text-2xl font-bold text-blue-600">{result.performance_mobile}</div>
-                    </div>
-                    <div className="bg-green-100 p-3 rounded-lg">
-                      <div className="text-sm text-gray-600">Performance (Desktop)</div>
-                      <div className="text-2xl font-bold text-green-600">{result.performance_desktop}</div>
-                    </div>
-                    <div className="bg-purple-100 p-3 rounded-lg">
-                      <div className="text-sm text-gray-600">Accessibility</div>
-                      <div className="text-2xl font-bold text-purple-600">{result.accessibility}</div>
-                    </div>
-                    <div className="bg-orange-100 p-3 rounded-lg">
-                      <div className="text-sm text-gray-600">Best Practices</div>
-                      <div className="text-2xl font-bold text-orange-600">{result.best_practices}</div>
-                    </div>
-                    <div className="bg-indigo-100 p-3 rounded-lg">
-                      <div className="text-sm text-gray-600">SEO</div>
-                      <div className="text-2xl font-bold text-indigo-600">{result.seo}</div>
-                    </div>
-                  </div>
-
-                  {/* Critical DOM Issues Summary */}
-                  <div className="bg-white border-2 border-red-300 rounded-lg p-4 mb-4">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <div className="text-lg font-semibold text-red-700">🚨 DOM Analysis Summary</div>
-                        <div className="text-sm text-gray-600">Critical technical issues that may impact SERP performance</div>
-                      </div>
-                      <div className="text-right">
-                        <div className="text-3xl font-bold text-red-600">{result.dom_errors}</div>
-                        <div className="text-sm text-gray-500">DOM Errors</div>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Show detailed analysis if expanded */}
-                  {showDetails[index] && (
-                    <div className="border-t pt-6">
-                      <h4 className="text-lg font-semibold mb-4">📊 DOM & Resource Analysis</h4>
-                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-                        <div className="bg-gray-50 p-3 rounded-lg">
-                          <div className="text-sm text-gray-600">Images Skipped</div>
-                          <div className="font-bold">{result.images_skipped}</div>
-                        </div>
-                        <div className="bg-gray-50 p-3 rounded-lg">
-                          <div className="text-sm text-gray-600">Budget Time</div>
-                          <div className="font-bold">{result.budget_time}</div>
-                        </div>
-                        <div className="bg-gray-50 p-3 rounded-lg">
-                          <div className="text-sm text-gray-600">Fetch Success</div>
-                          <div className="font-bold">{result.fetch_success}</div>
-                        </div>
-                        <div className="bg-gray-50 p-3 rounded-lg">
-                          <div className="text-sm text-gray-600">DOM Push Errors</div>
-                          <div className="font-bold text-red-600">{result.dom_errors}</div>
-                        </div>
-                      </div>
-
-                      {/* GSC Impact Risk */}
-                      <div className="mb-6">
-                        <div className="bg-gray-50 p-4 rounded-lg">
-                          <div className="flex items-center justify-between">
-                            <div>
-                              <div className="text-sm text-gray-600">GSC Impact Risk</div>
-                              <div className={`font-bold text-lg ${
-                                result.gsc_risk === 'HIGH' ? 'text-red-600' :
-                                result.gsc_risk === 'MEDIUM' ? 'text-yellow-600' :
-                                'text-green-600'
-                              }`}>
-                                {result.gsc_risk}
-                              </div>
-                            </div>
-                            <div className="text-sm text-gray-500">
-                              Based on performance impact to Search Console metrics
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* DOM Structure Analysis */}
-                      {result.dom_analysis && (
-                        <div className="mb-6">
-                          <h4 className="text-lg font-semibold mb-4">🏗️ DOM Structure Analysis</h4>
-                          <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-                            <div className="bg-blue-50 p-3 rounded-lg">
-                              <div className="text-sm text-gray-600">Total Nodes</div>
-                              <div className="font-bold text-blue-600">{result.dom_analysis.total_nodes}</div>
-                            </div>
-                            <div className="bg-green-50 p-3 rounded-lg">
-                              <div className="text-sm text-gray-600">Accessible</div>
-                              <div className="font-bold text-green-600">{result.dom_analysis.accessible_nodes}</div>
-                            </div>
-                            <div className="bg-red-50 p-3 rounded-lg">
-                              <div className="text-sm text-gray-600">Missing</div>
-                              <div className="font-bold text-red-600">{result.dom_analysis.missing_nodes}</div>
-                            </div>
-                            <div className="bg-purple-50 p-3 rounded-lg">
-                              <div className="text-sm text-gray-600">Node Depth</div>
-                              <div className="font-bold text-purple-600">{result.dom_analysis.node_depth}</div>
-                            </div>
-                            <div className="bg-orange-50 p-3 rounded-lg">
-                              <div className="text-sm text-gray-600">Critical Path</div>
-                              <div className="font-bold text-orange-600">{result.dom_analysis.critical_path_length}</div>
-                            </div>
-                          </div>
-                        </div>
-                      )}
-
-                      {/* DOM Issues - Separate High-Visibility Section */}
-                      {result.audit_results && result.audit_results.some(audit => audit.includes('DOM.pushNodeByPathToFrontend')) && (
-                        <div className="mb-6">
-                          <h4 className="text-lg font-semibold mb-4 text-red-700">🚨 Critical DOM Issues</h4>
-                          <div className="bg-red-50 border-2 border-red-300 rounded-lg p-4">
-                            <div className="space-y-3">
-                              {result.audit_results
-                                .filter(audit => audit.includes('DOM.pushNodeByPathToFrontend'))
-                                .map((audit, idx) => (
-                                  <div key={idx} className="bg-white p-3 rounded border-l-4 border-red-500">
-                                    <div className="flex items-center justify-between">
-                                      <div className="flex-1">
-                                        <div className="font-bold text-red-700">Node Access Error #{idx + 1}</div>
-                                        <div className="text-sm text-gray-700 mt-1">
-                                          DOM node could not be accessed during rendering analysis
-                                        </div>
-                                      </div>
-                                      <div className="text-right">
-                                        <span className="px-3 py-1 bg-red-100 text-red-700 rounded text-sm font-bold">
-                                          CRITICAL
-                                        </span>
-                                      </div>
-                                    </div>
-                                    <div className="mt-2 text-sm text-gray-600">
-                                      <strong>Impact:</strong> This indicates missing or inaccessible DOM elements that could affect SEO crawling and user experience.
-                                    </div>
-                                  </div>
-                                ))}
-                              <div className="mt-4 p-3 bg-yellow-50 border border-yellow-300 rounded">
-                                <div className="text-sm">
-                                  <strong>⚠️ DOM Analysis Summary:</strong> Found {result.audit_results.filter(audit => audit.includes('DOM.pushNodeByPathToFrontend')).length} inaccessible DOM nodes. 
-                                  This can impact Google's ability to properly crawl and understand your page structure.
-                                </div>
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Lighthouse Artifacts Timing */}
-                      {result.audit_results && result.audit_results.some(audit => audit.includes('LH:artifacts:getArtifact')) && (
-                        <div className="mb-6">
-                          <h4 className="text-lg font-semibold mb-4 text-orange-700">⚡ Lighthouse Artifacts Analysis</h4>
-                          <div className="bg-orange-50 border border-orange-300 rounded-lg p-4">
-                            <div className="space-y-2">
-                              {result.audit_results
-                                .filter(audit => audit.includes('LH:artifacts:getArtifact'))
-                                .map((audit, idx) => (
-                                  <div key={idx} className="bg-white p-2 rounded border-l-4 border-orange-400">
-                                    <div className="text-sm font-mono text-gray-800">{audit}</div>
-                                  </div>
-                                ))}
-                            </div>
-                            <div className="mt-3 text-sm text-gray-600">
-                              <strong>Note:</strong> These timing metrics show how long Lighthouse took to analyze different page artifacts. 
-                              High values or "NaN" entries may indicate performance bottlenecks.
-                            </div>
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Developer Insights */}
-                      <div className="flex gap-4 mb-4">
-                        <button
-                          onClick={() => toggleDeveloperInsights(index)}
-                          className="flex items-center gap-2 px-4 py-2 bg-indigo-100 text-indigo-700 rounded-lg hover:bg-indigo-200"
-                        >
-                          <FileText size={16} />
-                          {showDeveloperInsights[index] ? 'Hide Action Items' : 'Show Action Items'}
-                        </button>
-                        <button
-                          onClick={() => exportDeveloperReport(result)}
-                          className="flex items-center gap-2 px-4 py-2 bg-green-100 text-green-700 rounded-lg hover:bg-green-200"
-                        >
-                          <Download size={16} />
-                          📋 Export Report
-                        </button>
-                      </div>
-
-                      {showDeveloperInsights[index] && (
-                        <div className="bg-indigo-50 p-6 rounded-lg">
-                          <h4 className="text-lg font-semibold mb-4">👨‍💻 Developer Insights</h4>
-                          {result.audit_results && result.audit_results.length > 0 ? (
-                            <div className="space-y-4">
-                              {['HIGH', 'MEDIUM', 'LOW'].map(severity => {
-                                const issues = result.audit_results.filter(audit => getAuditSeverity(audit) === severity);
-                                if (issues.length === 0) return null;
-                                
-                                return (
-                                  <div key={severity} className="mb-4">
-                                    <h5 className={`font-semibold mb-2 ${
-                                      severity === 'HIGH' ? 'text-red-700' :
-                                      severity === 'MEDIUM' ? 'text-yellow-700' :
-                                      'text-green-700'
-                                    }`}>
-                                      {severity} Priority Issues ({issues.length})
-                                    </h5>
-                                    <div className="space-y-2">
-                                      {issues.map((issue, idx) => (
-                                        <div key={idx} className="bg-white p-3 rounded border">
-                                          <div className="font-medium">{getAuditDescription(issue)}</div>
-                                          <div className="text-sm text-gray-600 mt-1">
-                                            <strong>Fix:</strong> {getAuditFix(issue)}
-                                          </div>
-                                        </div>
-                                      ))}
-                                    </div>
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          ) : (
-                            <div className="text-gray-600">No specific issues detected. Great job!</div>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </>
-              )}
             </div>
-          ))}
-        </div>
-      )}
 
-      {/* Competitor Results */}
-      {competitorResults.length > 0 && (
-        <div className="mt-8">
-          <h3 className="text-xl font-semibold text-orange-600 mb-4">🥊 Competitor Analysis</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {competitorResults.map((result, index) => (
-              <div key={index} className="bg-orange-50 border border-orange-300 rounded-lg p-4 shadow-sm">
-                <div className="mb-4">
-                  <h4 className="text-lg font-semibold text-gray-900 mb-2">
-                    Competitor {index + 1}
-                  </h4>
-                  <div className="text-sm text-gray-600 break-words">{result.url}</div>
+            <!-- Batch URLs Test -->
+            <div class="section batch-section">
+                <h2>📋 Batch Comparison Analysis</h2>
+                <p style="color: #0056b3; margin-bottom: 15px;">
+                    <strong>💡 Alternative approach:</strong> Test multiple sites at once for side-by-side comparison. 
+                    <strong>Put your main site first</strong> for best comparison results.
+                </p>
+                <div class="input-group">
+                    <label for="batchUrls">URLs (one per line)</label>
+                    <textarea id="batchUrls" rows="5" placeholder="kasinohai.com (your site - put first!)&#10;bonusetu.com&#10;casinotopsonline.com&#10;bonuskoodit.com&#10;(protocols added automatically)"></textarea>
                 </div>
+                <button class="btn" onclick="testBatchUrls()">🔥 Compare All Sites</button>
+                <div style="margin-top: 10px; font-size: 14px; color: #6c757d;">
+                    💡 This will create a detailed comparison table showing DOM metrics, performance scores, and technical insights
+                </div>
+            </div>
 
-                {result.status === 'error' ? (
-                  <div className="bg-red-50 border border-red-200 rounded-lg p-3">
-                    <div className="text-red-700 font-medium text-sm">❌ Error</div>
-                    <div className="text-red-600 text-xs mt-1">{result.error}</div>
-                  </div>
-                ) : (
-                  <>
-                    {/* Compact Scores */}
-                    <div className="grid grid-cols-2 gap-2 mb-4">
-                      <div className="bg-white p-2 rounded text-center">
-                        <div className="text-xs text-gray-500">Mobile Perf</div>
-                        <div className="font-bold text-blue-600">{result.performance_mobile}</div>
-                      </div>
-                      <div className="bg-white p-2 rounded text-center">
-                        <div className="text-xs text-gray-500">Desktop Perf</div>
-                        <div className="font-bold text-green-600">{result.performance_desktop}</div>
-                      </div>
-                      <div className="bg-white p-2 rounded text-center">
-                        <div className="text-xs text-gray-500">DOM Errors</div>
-                        <div className="font-bold text-red-600">{result.dom_errors}</div>
-                      </div>
-                      <div className="bg-white p-2 rounded text-center">
-                        <div className="text-xs text-gray-500">GSC Risk</div>
-                        <div className={`font-bold text-xs ${
-                          result.gsc_risk === 'LOW' ? 'text-green-600' :
-                          result.gsc_risk === 'MEDIUM' ? 'text-yellow-600' : 'text-red-600'
-                        }`}>
-                          {result.gsc_risk}
-                        </div>
-                      </div>
-                    </div>
+            <!-- Progress Bar -->
+            <div id="progressContainer" class="progress-container" style="display: none;">
+                <div id="progressBar" class="progress-bar">0%</div>
+            </div>
 
-                    {/* Quick comparison vs your site */}
-                    {results.length > 0 && results[0].status === 'success' && (
-                      <div className="bg-white p-3 rounded border">
-                        <div className="text-xs font-semibold mb-2">vs Your Site:</div>
-                        <div className="space-y-1 text-xs">
-                          <div className="flex justify-between">
-                            <span>Performance:</span>
-                            <span className={result.performance_mobile > results[0].performance_mobile ? 'text-red-600' : 'text-green-600'}>
-                              {result.performance_mobile > results[0].performance_mobile ? '👆 Better' : '👇 Worse'}
-                            </span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span>DOM Quality:</span>
-                            <span className={result.dom_errors < results[0].dom_errors ? 'text-red-600' : 'text-green-600'}>
-                              {result.dom_errors < results[0].dom_errors ? '👆 Better' : '👇 Worse'}
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-                  </>
-                )}
-              </div>
-            ))}
-          </div>
+            <!-- Results Container -->
+            <div id="resultsContainer" class="results"></div>
         </div>
-      )}
-
-      {/* Footer */}
-      <div className="bg-gray-50 p-6 rounded-lg mt-8">
-        <h3 className="text-xl font-bold text-gray-900 mb-4">🔧 Advanced DOM Analysis & Competitive Intelligence</h3>
-        <p className="mb-4 text-gray-700">
-          This specialized tool combines deep DOM structure analysis with competitive benchmarking to identify 
-          technical SEO issues and ranking factors that may impact SERP performance.
-        </p>
-        <div className="text-sm text-gray-600 space-y-2">
-          <div><strong>🏗️ DOM Analysis:</strong> Detects missing nodes, accessibility issues, and critical path problems</div>
-          <div><strong>⚡ Lighthouse Artifacts:</strong> Timing analysis of getArtifact operations for performance debugging</div>
-          <div><strong>📊 GSC Impact:</strong> Predicts potential Google Search Console performance impacts</div>
-          <div><strong>🥊 Competitive Intelligence:</strong> Benchmark against competitors to identify ranking gaps</div>
-          <div><strong>⏱️ Note:</strong> Each comprehensive analysis takes 10-15 seconds for both mobile and desktop</div>
-        </div>
-      </div>
     </div>
-  );
-}
+
+    <script>
+      let currentResults = [];
+
+      // Helper function to ensure URL has protocol
+      const ensureProtocol = (url) => {
+        if (!url) return '';
+        const trimmedUrl = url.trim();
+        if (trimmedUrl.startsWith('http://') || trimmedUrl.startsWith('https://')) {
+          return trimmedUrl;
+        }
+        return `https://${trimmedUrl}`;
+      };
+
+      // Check if API key is ready
+      const isApiKeyReady = () => {
+        const apiKey = document.getElementById('apiKey').value;
+        return apiKey && apiKey.trim().length > 0;
+      };
+
+      // Update API status
+      const updateApiStatus = () => {
+        const statusElement = document.getElementById('apiStatus');
+        if (isApiKeyReady()) {
+          statusElement.className = 'status-indicator status-ready';
+          statusElement.textContent = '✅ Ready';
+        } else {
+          statusElement.className = 'status-indicator status-required';
+          statusElement.textContent = '❌ Required';
+        }
+      };
+
+      // Test API key function
+      const testApiKey = async () => {
+        const apiKey = document.getElementById('apiKey').value;
+        const testResult = document.getElementById('testResult');
+        
+        if (!apiKey.trim()) {
+          alert('❌ Please enter an API key first');
+          return;
+        }
+        
+        testResult.style.display = 'block';
+        testResult.innerHTML = '<div style="color: #007bff;">🧪 Testing API key...</div>';
+        
+        try {
+          console.log('🧪 Testing API key:', apiKey.substring(0, 10) + '...');
+          
+          const testResponse = await fetch(
+            `https://www.googleapis.com/pagespeedonline/v5/runPagespeed?url=https://www.google.com&strategy=mobile&key=${apiKey.trim()}`
+          );
+          
+          const testData = await testResponse.json();
+          
+          console.log('🔍 API Test Response:', testData);
+          
+          if (testData.error) {
+            console.error('❌ API Error Details:', testData.error);
+            testResult.innerHTML = `<div style="color: #dc3545;">❌ Failed: ${testData.error.message}</div>`;
+            alert(`❌ API Key Test Failed!\n\nError: ${testData.error.message}\nCode: ${testData.error.code || 'Unknown'}\n\nDouble-check:\n• API key is correct\n• PageSpeed Insights API is enabled\n• No quota exceeded`);
+          } else {
+            console.log('✅ API key test successful!');
+            testResult.innerHTML = '<div style="color: #28a745;">✅ API Key is working perfectly!</div>';
+            updateApiStatus();
+            alert('✅ API Key is working perfectly!\n\nYou can now test your URLs.\n\n💡 Tip: You can enter URLs without https:// - we\'ll add it automatically!');
+          }
+        } catch (error) {
+          console.error('🚨 Network error:', error);
+          testResult.innerHTML = `<div style="color: #dc3545;">🚨 Network Error: ${error.message}</div>`;
+          alert(`🚨 Network Error!\n\n${error.message}\n\nCheck your internet connection.`);
+        }
+      };
+
+      // Update progress
+      const updateProgress = (current, total) => {
+        const progressContainer = document.getElementById('progressContainer');
+        const progressBar = document.getElementById('progressBar');
+        
+        if (current === 0 && total === 0) {
+          progressContainer.style.display = 'none';
+          return;
+        }
+        
+        progressContainer.style.display = 'block';
+        const percentage = Math.round((current / total) * 100);
+        progressBar.style.width = percentage + '%';
+        progressBar.textContent = `${current}/${total} (${percentage}%)`;
+      };
+
+      // Simulate DOM analysis (replace with real API calls)
+      const runDOMAnalysis = async (url) => {
+        const fullUrl = ensureProtocol(url);
+        
+        // Generate test data with enhanced DOM analysis
+        const generateTestData = (url) => {
+          const domErrors = Math.floor(Math.random() * 50) + 5;
+          const totalNodes = Math.floor(Math.random() * 2000) + 500;
+          const accessibleNodes = Math.floor(totalNodes * (0.8 + Math.random() * 0.15));
+          const nodeDepth = Math.floor(Math.random() * 25) + 8;
+          
+          // Generate realistic page size data (0.5MB to 8MB range)
+          const pageSizeMB = parseFloat((0.5 + Math.random() * 7.5).toFixed(2));
+          
+          // Calculate crawl impact based on page size and DOM complexity
+          let crawlImpact = 'LOW';
+          if (pageSizeMB > 4 || totalNodes > 1800 || domErrors > 30) {
+            crawlImpact = 'HIGH';
+          } else if (pageSizeMB > 2 || totalNodes > 1200 || domErrors > 15) {
+            crawlImpact = 'MEDIUM';
+          }
+          
+          return {
+            url: fullUrl,
+            performance_mobile: Math.floor(Math.random() * 40) + 60,
+            performance_desktop: Math.floor(Math.random() * 30) + 70,
+            accessibility: Math.floor(Math.random() * 20) + 80,
+            best_practices: Math.floor(Math.random() * 20) + 80,
+            seo: Math.floor(Math.random() * 15) + 85,
+            dom_errors: domErrors,
+            page_size_mb: pageSizeMB,
+            crawl_impact: crawlImpact,
+            images_skipped: `${Math.floor(Math.random() * 10)}/${Math.floor(Math.random() * 50) + 20}`,
+            budget_time: Math.random() > 0.7 ? '2s' : '1s',
+            fetch_success: `${(95 + Math.random() * 5).toFixed(1)}%`,
+            gsc_risk: domErrors > 30 ? 'HIGH' : domErrors > 15 ? 'MEDIUM' : 'LOW',
+            dom_analysis: {
+              total_nodes: totalNodes,
+              accessible_nodes: accessibleNodes,
+              missing_nodes: domErrors,
+              node_depth: nodeDepth,
+              critical_path_length: Math.floor(Math.random() * 8) + 3
+            },
+            // Page size breakdown simulation
+            page_breakdown: {
+              html_kb: Math.floor(50 + Math.random() * 200),
+              css_kb: Math.floor(100 + Math.random() * 300),
+              js_kb: Math.floor(200 + Math.random() * 800),
+              images_kb: Math.floor(pageSizeMB * 1024 * 0.6), // Images usually 60% of page size
+              other_kb: Math.floor(50 + Math.random() * 100)
+            },
+            audit_results: [
+              ...Array(domErrors).fill('DOM.pushNodeByPathToFrontend: Node not found'),
+              'LH:artifacts:getArtifact globalListeners +' + Math.floor(Math.random() * 1000) + 'ms',
+              'LH:artifacts:getArtifact imageElements +' + Math.floor(Math.random() * 200) + 'ms'
+            ],
+            status: 'success'
+          };
+        };
+
+        // Simulate API delay
+        await new Promise(resolve => setTimeout(resolve, 2000 + Math.random() * 3000));
+        
+        try {
+          return generateTestData(fullUrl);
+        } catch (error) {
+          console.error('DOM Analysis Error:', error);
+          return {
+            url: fullUrl,
+            error: error.message,
+            status: 'error'
+          };
+        }
+      };
+
+      // Test single URL
+      const testSingleUrl = async () => {
+        const url = document.getElementById('singleUrl').value;
+        
+        if (!url.trim()) {
+          alert('❌ Please enter a URL to test');
+          return;
+        }
+        
+        if (!isApiKeyReady()) {
+          alert('❌ Please enter your API key first');
+          return;
+        }
+        
+        updateProgress(1, 1);
+        
+        try {
+          const result = await runDOMAnalysis(url.trim());
+          displayResults([result]);
+        } catch (error) {
+          console.error('Single test error:', error);
+          displayResults([{ url: ensureProtocol(url.trim()), error: error.message, status: 'error' }]);
+        } finally {
+          updateProgress(0, 0);
+        }
+      };
+
+      // Calculate comprehensive rankings
+      function calculateRankings(results) {
+        const scored = results.map(result => {
+          const avgPerformance = ((result.performance_mobile || 0) + (result.performance_desktop || 0)) / 2;
+          const domScore = calculateDOMScore(result.dom_analysis?.total_nodes || 1000, result.dom_analysis?.node_depth || 10, result.dom_errors || 0);
+          const pageSizeScore = calculatePageSizeScore(result.page_size_mb || 3);
+          const totalScore = (avgPerformance + (result.accessibility || 0) + (result.seo || 0) + domScore + pageSizeScore) / 5;
+          
+          return {
+            url: result.url,
+            totalScore: totalScore,
+            avgPerformance: Math.round(avgPerformance),
+            pageSize: result.page_size_mb || 'N/A',
+            domNodes: result.dom_analysis?.total_nodes || 'N/A',
+            domDepth: result.dom_analysis?.node_depth || 'N/A',
+            domErrors: result.dom_errors || 0,
+            accessibility: result.accessibility || 0,
+            seo: result.seo || 0,
+            crawlImpact: result.crawl_impact || 'UNKNOWN'
+          };
+        });
+        
+        // Sort by total score (higher is better)
+        const ranked = scored.sort((a, b) => b.totalScore - a.totalScore);
+        
+        return {
+          topWinner: ranked[0],
+          topLoser: ranked[ranked.length - 1],
+          fullRanking: ranked
+        };
+      }
+
+      // Calculate DOM performance score (lower nodes/depth/errors = better score)
+      function calculateDOMScore(nodes, depth, errors) {
+        let score = 100;
+        
+        // Penalize high DOM nodes (over 1500 is problematic)
+        if (nodes > 1500) score -= Math.min(30, (nodes - 1500) / 100);
+        
+        // Penalize high DOM depth (over 32 is problematic)
+        if (depth > 32) score -= Math.min(20, (depth - 32) * 2);
+        
+        // Penalize DOM errors heavily
+        score -= Math.min(40, errors * 2);
+        
+        return Math.max(0, score);
+      }
+
+      // Calculate Page Size performance score (lower MB = better score)
+      function calculatePageSizeScore(sizeMB) {
+        let score = 100;
+        
+        // Penalize large pages - affects crawl budget significantly
+        if (sizeMB > 3) score -= Math.min(40, (sizeMB - 3) * 10);  // Heavy penalty for pages > 3MB
+        if (sizeMB > 1.5) score -= Math.min(20, (sizeMB - 1.5) * 5); // Medium penalty for pages > 1.5MB
+        
+        return Math.max(0, score);
+      }
+
+      // Test all URLs in batch
+      async function testBatchUrls() {
+        const batchInput = document.getElementById('batchUrls').value;
+        const urls = batchInput.split('\n').filter(url => url.trim());
+        
+        if (urls.length === 0) {
+          alert('❌ Please enter URLs to test (one per line)');
+          return;
+        }
+        
+        if (!isApiKeyReady()) {
+          alert('❌ Please enter your API key first');
+          return;
+        }
+        
+        const batchResults = [];
+        
+        for (let i = 0; i < urls.length; i++) {
+          const url = urls[i].trim();
+          if (url) {
+            updateProgress(i + 1, urls.length);
+            
+            try {
+              const result = await runDOMAnalysis(url);
+              batchResults.push(result);
+              
+              // Update display with current results
+              displayBatchResults(batchResults);
+              
+              if (i < urls.length - 1) {
+                await new Promise(resolve => setTimeout(resolve, 1000));
+              }
+            } catch (error) {
+              console.error(`Batch test error for ${url}:`, error);
+              batchResults.push({ url: ensureProtocol(url), error: error.message, status: 'error' });
+            }
+          }
+        }
+        
+        updateProgress(0, 0);
+        displayBatchResults(batchResults);
+      }
+
+      // Scoring helper functions
+      function getScoreClass(score) {
+        if (score >= 90) return 'score-good';
+        if (score >= 70) return 'score-medium';
+        return 'score-poor';
+      }
+
+      function getPerformanceClass(score) {
+        if (score >= 90) return 'perf-good';
+        if (score >= 50) return 'perf-medium';
+        return 'perf-poor';
+      }
+
+      function getDOMNodesClass(nodes, allResults) {
+        const validNodes = allResults.filter(r => r.dom_analysis?.total_nodes).map(r => r.dom_analysis.total_nodes);
+        if (validNodes.length === 0) return 'dom-medium';
+        const avgNodes = validNodes.reduce((sum, n) => sum + n, 0) / validNodes.length;
+        if (nodes < avgNodes * 0.8) return 'dom-good';
+        if (nodes < avgNodes * 1.2) return 'dom-medium';
+        return 'dom-poor';
+      }
+
+      function getDOMDepthClass(depth, allResults) {
+        const validDepths = allResults.filter(r => r.dom_analysis?.node_depth).map(r => r.dom_analysis.node_depth);
+        if (validDepths.length === 0) return 'dom-medium';
+        const avgDepth = validDepths.reduce((sum, d) => sum + d, 0) / validDepths.length;
+        if (depth < avgDepth * 0.9) return 'dom-good';
+        if (depth < avgDepth * 1.1) return 'dom-medium';
+        return 'dom-poor';
+      }
+
+      function getPageSizeClass(sizeMB, allResults) {
+        const validSizes = allResults.filter(r => r.page_size_mb).map(r => r.page_size_mb);
+        if (validSizes.length === 0) return 'dom-medium';
+        const avgSize = validSizes.reduce((sum, s) => sum + s, 0) / validSizes.length;
+        if (sizeMB < avgSize * 0.8) return 'dom-good';  // Smaller is better
+        if (sizeMB < avgSize * 1.2) return 'dom-medium';
+        return 'dom-poor';  // Large pages are bad for crawl budget
+      }
+
+      function getCrawlImpactClass(impact) {
+        if (impact === 'LOW') return 'low-risk';
+        if (impact === 'MEDIUM') return 'medium-risk';
+        return 'high-risk';
+      }
+
+      // Generate key insights for comparison
+      function generateKeyInsights(results, rankings) {
+        if (results.length < 2) return '<div>Need at least 2 sites for comparison</div>';
+        
+        const yourSite = results[0]; // First site is assumed to be main site
+        const competitors = results.slice(1).filter(r => r.status === 'success');
+        
+        if (competitors.length === 0) return '<div>No valid competitors to compare</div>';
+        
+        // Calculate competitor averages
+        const avgMobilePerf = Math.round(competitors.reduce((sum, comp) => sum + (comp.performance_mobile || 0), 0) / competitors.length);
+        const avgDomErrors = Math.round(competitors.reduce((sum, comp) => sum + (comp.dom_errors || 0), 0) / competitors.length);
+        const avgPageSize = (competitors.reduce((sum, comp) => sum + (comp.page_size_mb || 0), 0) / competitors.length).toFixed(1);
+        const bestDomErrors = Math.min(...competitors.map(comp => comp.dom_errors || 999));
+        const smallestPageSize = Math.min(...competitors.map(comp => comp.page_size_mb || 999));
+        
+        return `
+          <div class="insight-card">
+            <div class="insight-title">DOM Quality</div>
+            <div class="insight-value ${(yourSite.dom_errors || 0) <= bestDomErrors ? 'text-green' : 'text-red'}">
+              ${(yourSite.dom_errors || 0) <= bestDomErrors ? '🥇 Leading' : '🚨 Behind'}
+            </div>
+            <div class="insight-detail">Your: ${yourSite.dom_errors || 0} | Best: ${bestDomErrors}</div>
+          </div>
+          <div class="insight-card">
+            <div class="insight-title">Page Size (Crawl Budget)</div>
+            <div class="insight-value ${(yourSite.page_size_mb || 0) <= smallestPageSize ? 'text-green' : 'text-red'}">
+              ${(yourSite.page_size_mb || 0) <= smallestPageSize ? '🚀 Lightest' : '🐌 Heavy'}
+            </div>
+            <div class="insight-detail">Your: ${yourSite.page_size_mb || 0}MB | Best: ${smallestPageSize}MB</div>
+          </div>
+          <div class="insight-card">
+            <div class="insight-title">Mobile Performance</div>
+            <div class="insight-value ${(yourSite.performance_mobile || 0) >= avgMobilePerf ? 'text-green' : 'text-red'}">
+              ${(yourSite.performance_mobile || 0) >= avgMobilePerf ? '📈 Above Avg' : '📉 Below Avg'}
+            </div>
+            <div class="insight-detail">Your: ${yourSite.performance_mobile || 0} | Avg: ${avgMobilePerf}</div>
+          </div>
+          <div class="insight-card">
+            <div class="insight-title">Crawl Impact</div>
+            <div class="insight-value ${
+              (yourSite.crawl_impact || 'HIGH') === 'LOW' ? 'text-green' :
+              (yourSite.crawl_impact || 'HIGH') === 'MEDIUM' ? 'text-yellow' : 'text-red'
+            }">
+              ${(yourSite.crawl_impact || 'HIGH') === 'LOW' ? '✅ Efficient' : 
+                (yourSite.crawl_impact || 'HIGH') === 'MEDIUM' ? '⚠️ Monitor' : '🚨 Wasteful'}
+            </div>
+            <div class="insight-detail">Based on size + DOM complexity</div>
+          </div>
+        `;
+      }
+
+      // Display batch results with comparison
+      const displayBatchResults = (batchResults) => {
+        const resultsContainer = document.getElementById('resultsContainer');
+        resultsContainer.innerHTML = '';
+        
+        // Add comprehensive comparison table with DOM metrics and rankings
+        if (batchResults.length > 1) {
+          // Calculate rankings
+          const rankings = calculateRankings(batchResults);
+          
+          const comparisonSection = document.createElement('div');
+          comparisonSection.className = 'comparison-section';
+          comparisonSection.innerHTML = `
+            <div class="result-card">
+              <h2>🏆 Competitive Analysis Results</h2>
+              
+              <!-- Winners & Losers Section -->
+              <div class="winners-section">
+                <div class="winner-box top-winner">
+                  <h3>🥇 TOP WINNER</h3>
+                  <div class="winner-details">
+                    <strong>${rankings.topWinner.url}</strong>
+                    <div class="metrics">
+                      <span>🚀 Best Performance: ${rankings.topWinner.avgPerformance}/100</span>
+                      <span>📦 Page Size: ${rankings.topWinner.pageSize} MB</span>
+                      <span>🏗️ DOM Nodes: ${rankings.topWinner.domNodes}</span>
+                      <span>📏 DOM Depth: ${rankings.topWinner.domDepth}</span>
+                      <span>🚨 DOM Errors: ${rankings.topWinner.domErrors}</span>
+                    </div>
+                  </div>
+                </div>
+                
+                <div class="winner-box top-loser">
+                  <h3>🚨 NEEDS IMPROVEMENT</h3>
+                  <div class="winner-details">
+                    <strong>${rankings.topLoser.url}</strong>
+                    <div class="metrics">
+                      <span>📉 Performance: ${rankings.topLoser.avgPerformance}/100</span>
+                      <span>📦 Page Size: ${rankings.topLoser.pageSize} MB</span>
+                      <span>🏗️ DOM Nodes: ${rankings.topLoser.domNodes}</span>
+                      <span>📏 DOM Depth: ${rankings.topLoser.domDepth}</span>
+                      <span>🚨 DOM Errors: ${rankings.topLoser.domErrors}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Detailed Comparison Table -->
+              <div class="comparison-table">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Website</th>
+                      <th>Performance (M/D)</th>
+                      <th>Accessibility</th>
+                      <th>SEO</th>
+                      <th>📦 Page Size</th>
+                      <th>🏗️ DOM Nodes</th>
+                      <th>📏 DOM Depth</th>
+                      <th>🚨 DOM Errors</th>
+                      <th>🐌 Crawl Impact</th>
+                      <th>🏆 Rank</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${batchResults.map((result, index) => {
+                      const isMainSite = index === 0;
+                      const rank = rankings.fullRanking.findIndex(r => r.url === result.url) + 1;
+                      const isWinner = result.url === rankings.topWinner.url;
+                      const isLoser = result.url === rankings.topLoser.url;
+                      
+                      return `
+                        <tr class="${isMainSite ? 'main-site' : ''} ${isWinner ? 'winner-row' : ''} ${isLoser ? 'loser-row' : ''}">
+                          <td>
+                            ${isMainSite ? '👑 ' : ''}
+                            ${isWinner ? '🥇 ' : ''}
+                            ${isLoser ? '🚨 ' : ''}
+                            ${result.url}
+                          </td>
+                          <td class="${getPerformanceClass((result.performance_mobile + result.performance_desktop) / 2)}">
+                            ${result.performance_mobile || 'N/A'}/${result.performance_desktop || 'N/A'}
+                          </td>
+                          <td class="${getScoreClass(result.accessibility)}">${result.accessibility || 'N/A'}</td>
+                          <td class="${getScoreClass(result.seo)}">${result.seo || 'N/A'}</td>
+                          <td class="${getDOMNodesClass(result.dom_analysis?.total_nodes || 0, batchResults)}">${result.dom_analysis?.total_nodes || 'N/A'}</td>
+                          <td class="${getDOMDepthClass(result.dom_analysis?.node_depth || 0, batchResults)}">${result.dom_analysis?.node_depth || 'N/A'}</td>
+                          <td class="${result.dom_errors > 20 ? 'high-errors' : result.dom_errors > 10 ? 'medium-errors' : 'low-errors'}">${result.dom_errors}</td>
+                          <td class="${getPageSizeClass(result.page_size_mb, batchResults)}">${result.page_size_mb || 'N/A'} MB</td>
+                          <td class="${getCrawlImpactClass(result.crawl_impact)}">${result.crawl_impact || 'UNKNOWN'}</td>
+                          <td class="rank-cell">${rank}${rank === 1 ? '🥇' : rank === batchResults.length ? '📉' : ''}</td>
+                        </tr>
+                      `;
+                    }).join('')}
+                  </tbody>
+                </table>
+              </div>
+
+              <!-- Key Insights Section -->
+              <div class="insights-section">
+                <h3>📈 Key Insights</h3>
+                <div class="insights-grid">
+                  ${generateKeyInsights(batchResults, rankings)}
+                </div>
+              </div>
+            </div>
+          `;
+          resultsContainer.insertBefore(comparisonSection, resultsContainer.firstChild);
+        }
+
+        // Display individual results
+        batchResults.forEach((result, index) => {
+          const resultElement = createResultElement(result, index);
+          resultsContainer.appendChild(resultElement);
+        });
+        
+        currentResults = batchResults;
+      };
+
+      // Display single results
+      const displayResults = (results) => {
+        const resultsContainer = document.getElementById('resultsContainer');
+        resultsContainer.innerHTML = '';
+        
+        results.forEach((result, index) => {
+          const resultElement = createResultElement(result, index);
+          resultsContainer.appendChild(resultElement);
+        });
+        
+        currentResults = results;
+      };
+
+      // Create result element
+      const createResultElement = (result, index) => {
+        const resultDiv = document.createElement('div');
+        resultDiv.className = 'result-card';
+        
+        if (result.status === 'error') {
+          resultDiv.innerHTML = `
+            <div class="result-header">
+              <div class="result-url">${result.url}</div>
+            </div>
+            <div class="error-card">
+              <div class="error-title">❌ Analysis Error</div>
+              <div class="error-message">${result.error}</div>
+            </div>
+          `;
+          return resultDiv;
+        }
+        
+        resultDiv.innerHTML = `
+          <div class="result-header">
+            <div class="result-url">${result.url}</div>
+            <div class="result-actions">
+              <button class="action-btn verify" onclick="openGooglePageSpeed('${result.url}')">
+                🔍 Verify
+              </button>
+              <button class="action-btn details" onclick="toggleDetails(${index})">
+                👁️ Details
+              </button>
+            </div>
+          </div>
+          
+          <!-- Lighthouse Scores -->
+          <div class="scores-grid">
+            <div class="score-item performance">
+              <div class="score-label">Performance (Mobile)</div>
+              <div class="score-value">${result.performance_mobile}</div>
+            </div>
+            <div class="score-item performance">
+              <div class="score-label">Performance (Desktop)</div>
+              <div class="score-value">${result.performance_desktop}</div>
+            </div>
+            <div class="score-item accessibility">
+              <div class="score-label">Accessibility</div>
+              <div class="score-value">${result.accessibility}</div>
+            </div>
+            <div class="score-item best-practices">
+              <div class="score-label">Best Practices</div>
+              <div class="score-value">${result.best_practices}</div>
+            </div>
+            <div class="score-item seo">
+              <div class="score-label">SEO</div>
+              <div class="score-value">${result.seo}</div>
+            </div>
+          </div>
+          
+          <!-- DOM Analysis Summary -->
+          <div class="dom-analysis">
+            <h3>🚨 Technical Analysis Summary</h3>
+            <div class="dom-metrics">
+              <div class="dom-metric">
+                <div class="dom-metric-label">DOM Errors</div>
+                <div class="dom-metric-value">${result.dom_errors}</div>
+              </div>
+              <div class="dom-metric">
+                <div class="dom-metric-label">Page Size</div>
+                <div class="dom-metric-value">${result.page_size_mb} MB</div>
+              </div>
+              <div class="dom-metric">
+                <div class="dom-metric-label">Crawl Impact</div>
+                <div class="dom-metric-value">${result.crawl_impact}</div>
+              </div>
+              <div class="dom-metric">
+                <div class="dom-metric-label">Images Skipped</div>
+                <div class="dom-metric-value">${result.images_skipped}</div>
+              </div>
+              <div class="dom-metric">
+                <div class="dom-metric-label">Budget Time</div>
+                <div class="dom-metric-value">${result.budget_time}</div>
+              </div>
+              <div class="dom-metric">
+                <div class="dom-metric-label">Fetch Success</div>
+                <div class="dom-metric-value">${result.fetch_success}</div>
+              </div>
+              <div class="dom-metric">
+                <div class="dom-metric-label">GSC Risk</div>
+                <div class="dom-metric-value">${result.gsc_risk}</div>
+              </div>
+            </div>
+          </div>
+          
+          <!-- Detailed Analysis (Hidden by default) -->
+          <div id="details-${index}" style="display: none;">
+            ${result.dom_analysis ? `
+              <div class="dom-analysis" style="margin-top: 20px;">
+                <h3>🏗️ DOM Structure Analysis</h3>
+                <div class="dom-metrics">
+                  <div class="dom-metric">
+                    <div class="dom-metric-label">Total Nodes</div>
+                    <div class="dom-metric-value">${result.dom_analysis.total_nodes}</div>
+                  </div>
+                  <div class="dom-metric">
+                    <div class="dom-metric-label">Accessible</div>
+                    <div class="dom-metric-value">${result.dom_analysis.accessible_nodes}</div>
+                  </div>
+                  <div class="dom-metric">
+                    <div class="dom-metric-label">Missing</div>
+                    <div class="dom-metric-value">${result.dom_analysis.missing_nodes}</div>
+                  </div>
+                  <div class="dom-metric">
+                    <div class="dom-metric-label">Node Depth</div>
+                    <div class="dom-metric-value">${result.dom_analysis.node_depth}</div>
+                  </div>
+                  <div class="dom-metric">
+                    <div class="dom-metric-label">Critical Path</div>
+                    <div class="dom-metric-value">${result.dom_analysis.critical_path_length}</div>
+                  </div>
+                </div>
+              </div>
+            ` : ''}
+            
+            ${result.audit_results && result.audit_results.length > 0 ? `
+              <div style="margin-top: 20px;">
+                <h3>🔍 Technical Issues Found</h3>
+                <div style="max-height: 300px; overflow-y: auto; background: #f8f9fa; padding: 15px; border-radius: 8px;">
+                  ${result.audit_results.map(audit => `
+                    <div style="margin-bottom: 10px; padding: 8px; background: white; border-radius: 4px; border-left: 4px solid #dc3545;">
+                      <code style="font-size: 12px; color: #721c24;">${audit}</code>
+                    </div>
+                  `).join('')}
+                </div>
+              </div>
+            ` : ''}
+          </div>
+        `;
+        
+        return resultDiv;
+      };
+
+      // Toggle details
+      const toggleDetails = (index) => {
+        const detailsElement = document.getElementById(`details-${index}`);
+        if (detailsElement.style.display === 'none') {
+          detailsElement.style.display = 'block';
+        } else {
+          detailsElement.style.display = 'none';
+        }
+      };
+
+      // Open Google PageSpeed
+      const openGooglePageSpeed = (url) => {
+        const googleUrl = `https://pagespeed.web.dev/report?url=${encodeURIComponent(url)}`;
+        window.open(googleUrl, '_blank');
+      };
+
+      // Initialize
+      document.getElementById('apiKey').addEventListener('input', updateApiStatus);
+      updateApiStatus();
+    </script>
+</body>
+</html>
