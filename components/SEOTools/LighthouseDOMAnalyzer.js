@@ -177,7 +177,7 @@ export default function LighthouseDOMAnalyzer() {
       console.log('🔑 Using API key:', apiKey.substring(0, 10) + '...');
       
       const mobileResponse = await fetch(
-        `https://www.googleapis.com/pagespeedonline/v5/runPagespeed?url=${encodeURIComponent(url)}&strategy=mobile&key=${apiKey.trim()}&category=performance&category=accessibility&category=best-practices&category=seo`
+        `https://www.googleapis.com/pagespeedonline/v5/runPagespeed?url=${encodeURIComponent(url)}&strategy=mobile&key=${apiKey.trim()}`
       );
       const mobileData = await mobileResponse.json();
       
@@ -191,7 +191,7 @@ export default function LighthouseDOMAnalyzer() {
       await new Promise(resolve => setTimeout(resolve, 2000));
 
       const desktopResponse = await fetch(
-        `https://www.googleapis.com/pagespeedonline/v5/runPagespeed?url=${encodeURIComponent(url)}&strategy=desktop&key=${apiKey.trim()}&category=performance&category=accessibility&category=best-practices&category=seo`
+        `https://www.googleapis.com/pagespeedonline/v5/runPagespeed?url=${encodeURIComponent(url)}&strategy=desktop&key=${apiKey.trim()}`
       );
       const desktopData = await desktopResponse.json();
       
