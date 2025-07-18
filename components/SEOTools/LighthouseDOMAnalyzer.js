@@ -49,7 +49,7 @@ export default function LighthouseDOMAnalyzer() {
       } else {
         console.log('✅ API key test successful!');
         setTestStatus('✅ Working!');
-        alert('✅ API Key is working perfectly!\n\nYou can now test your URLs.');
+        alert('✅ API Key is working perfectly!\n\nYou can now test your URLs.\n\n💡 Tip: You can enter URLs without https:// - we\'ll add it automatically!');
       }
     } catch (error) {
       console.error('🚨 Network error:', error);
@@ -190,14 +190,27 @@ export default function LighthouseDOMAnalyzer() {
     URL.revokeObjectURL(url);
   };
 
+  // Helper function to ensure URL has protocol
+  const ensureProtocol = (url) => {
+    if (!url) return '';
+    const trimmedUrl = url.trim();
+    if (trimmedUrl.startsWith('http://') || trimmedUrl.startsWith('https://')) {
+      return trimmedUrl;
+    }
+    return `https://${trimmedUrl}`;
+  };
+
   // Run PageSpeed Insights API call with DOM Analysis
   const runPageSpeedInsights = async (url) => {
+    // Ensure URL has proper protocol
+    const fullUrl = ensureProtocol(url);
+    
     try {
-      console.log('🚀 Testing URL:', url);
+      console.log('🚀 Testing URL:', fullUrl);
       console.log('🔑 Using API key:', apiKey.substring(0, 10) + '...');
       
       const mobileResponse = await fetch(
-        `https://www.googleapis.com/pagespeedonline/v5/runPagespeed?url=${encodeURIComponent(url)}&strategy=mobile&key=${apiKey.trim()}`
+        `https://www.googleapis.com/pagespeedonline/v5/runPagespeed?url=${encodeURIComponent(fullUrl)}&strategy=mobile&key=${apiKey.trim()}`
       );
       const mobileData = await mobileResponse.json();
       
@@ -211,7 +224,7 @@ export default function LighthouseDOMAnalyzer() {
       await new Promise(resolve => setTimeout(resolve, 2000));
 
       const desktopResponse = await fetch(
-        `https://www.googleapis.com/pagespeedonline/v5/runPagespeed?url=${encodeURIComponent(url)}&strategy=desktop&key=${apiKey.trim()}`
+        `https://www.googleapis.com/pagespeedonline/v5/runPagespeed?url=${encodeURIComponent(fullUrl)}&strategy=desktop&key=${apiKey.trim()}`
       );
       const desktopData = await desktopResponse.json();
       
@@ -274,7 +287,7 @@ export default function LighthouseDOMAnalyzer() {
                      performanceScore < 0.8 ? 'MEDIUM' : 'LOW';
 
       const result = {
-        url,
+        url: fullUrl, // Use the full URL with protocol
         performance_mobile: Math.round((mobileData.lighthouseResult?.categories?.performance?.score || 0) * 100),
         performance_desktop: Math.round((desktopData.lighthouseResult?.categories?.performance?.score || 0) * 100),
         accessibility: Math.round((mobileData.lighthouseResult?.categories?.accessibility?.score || 0) * 100),
@@ -304,7 +317,7 @@ export default function LighthouseDOMAnalyzer() {
     } catch (error) {
       console.error('🚨 DOM Analysis Error:', error);
       return {
-        url,
+        url: fullUrl,
         error: error.message,
         status: 'error'
       };
@@ -333,7 +346,7 @@ export default function LighthouseDOMAnalyzer() {
       setResults([result]);
     } catch (error) {
       console.error('Single test error:', error);
-      setResults([{ url: singleUrl.trim(), error: error.message, status: 'error' }]);
+      setResults([{ url: ensureProtocol(singleUrl.trim()), error: error.message, status: 'error' }]);
     } finally {
       setIsRunning(false);
     }
@@ -371,7 +384,7 @@ export default function LighthouseDOMAnalyzer() {
           }
         } catch (error) {
           console.error(`Batch test error for ${url}:`, error);
-          batchResults.push({ url, error: error.message, status: 'error' });
+          batchResults.push({ url: ensureProtocol(url), error: error.message, status: 'error' });
         }
       }
     }
@@ -411,7 +424,7 @@ export default function LighthouseDOMAnalyzer() {
           }
         } catch (error) {
           console.error(`Competitor analysis error for ${url}:`, error);
-          compResults.push({ url, error: error.message, status: 'error' });
+          compResults.push({ url: ensureProtocol(url), error: error.message, status: 'error' });
         }
       }
     }
@@ -419,7 +432,192 @@ export default function LighthouseDOMAnalyzer() {
     setIsRunningCompetitors(false);
   };
 
-  // Generate benchmark data
+  // Generate batch comparison
+  const generateBatchComparison = () => {
+    if (results.length < 2) return null;
+    
+    return {
+      sites: results.filter(site => site.status === 'success'),
+      comparison_data: results
+        .filter(site => site.status === 'success')
+        .map(site => ({
+          url: site.url,
+          performance_mobile: site.performance_mobile,
+          performance_desktop: site.performance_desktop,
+          dom_errors: site.dom_errors,
+          images_skipped: site.images_skipped,
+          dom_analysis: site.dom_analysis,
+          gsc_risk: site.gsc_risk,
+          accessibility: site.accessibility,
+          seo: site.seo
+        }))
+    };
+  };
+
+  // Batch Comparison Component
+  const BatchComparisonTable = ({ batchData }) => {
+    if (!batchData || batchData.sites.length < 2) return null;
+    
+    return (
+      <div className="bg-gradient-to-r from-purple-50 to-blue-50 border-2 border-purple-300 rounded-lg p-6 mb-8">
+        <h2 className="text-2xl font-bold text-gray-900 mb-6 text-center">📊 Site Comparison Dashboard</h2>
+        
+        {/* Performance Comparison */}
+        <div className="mb-8">
+          <h3 className="text-lg font-semibold mb-4">🚀 Performance Scores</h3>
+          <div className="overflow-x-auto">
+            <table className="w-full bg-white rounded-lg shadow-sm">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-4 py-3 text-left text-sm font-semibold text-gray-900">Site</th>
+                  <th className="px-4 py-3 text-center text-sm font-semibold text-gray-900">Mobile Perf</th>
+                  <th className="px-4 py-3 text-center text-sm font-semibold text-gray-900">Desktop Perf</th>
+                  <th className="px-4 py-3 text-center text-sm font-semibold text-gray-900">Accessibility</th>
+                  <th className="px-4 py-3 text-center text-sm font-semibold text-gray-900">SEO</th>
+                </tr>
+              </thead>
+              <tbody>
+                {batchData.comparison_data.map((site, idx) => (
+                  <tr key={idx} className={idx === 0 ? 'bg-blue-50 border-l-4 border-blue-500' : 'hover:bg-gray-50'}>
+                    <td className="px-4 py-3">
+                      <div className="font-medium text-gray-900">{new URL(site.url).hostname}</div>
+                      {idx === 0 && <div className="text-xs text-blue-600 font-semibold">👑 YOUR SITE</div>}
+                    </td>
+                    <td className="px-4 py-3 text-center">
+                      <span className={`font-bold ${site.performance_mobile >= 90 ? 'text-green-600' : site.performance_mobile >= 50 ? 'text-yellow-600' : 'text-red-600'}`}>
+                        {site.performance_mobile}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-center">
+                      <span className={`font-bold ${site.performance_desktop >= 90 ? 'text-green-600' : site.performance_desktop >= 50 ? 'text-yellow-600' : 'text-red-600'}`}>
+                        {site.performance_desktop}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-center">
+                      <span className={`font-bold ${site.accessibility >= 90 ? 'text-green-600' : site.accessibility >= 50 ? 'text-yellow-600' : 'text-red-600'}`}>
+                        {site.accessibility}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-center">
+                      <span className={`font-bold ${site.seo >= 90 ? 'text-green-600' : site.seo >= 50 ? 'text-yellow-600' : 'text-red-600'}`}>
+                        {site.seo}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {/* DOM Analysis Comparison */}
+        <div className="mb-8">
+          <h3 className="text-lg font-semibold mb-4">🏗️ DOM Structure Comparison</h3>
+          <div className="overflow-x-auto">
+            <table className="w-full bg-white rounded-lg shadow-sm">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-4 py-3 text-left text-sm font-semibold text-gray-900">Site</th>
+                  <th className="px-4 py-3 text-center text-sm font-semibold text-gray-900">DOM Errors</th>
+                  <th className="px-4 py-3 text-center text-sm font-semibold text-gray-900">Total Nodes</th>
+                  <th className="px-4 py-3 text-center text-sm font-semibold text-gray-900">Accessible Nodes</th>
+                  <th className="px-4 py-3 text-center text-sm font-semibold text-gray-900">Node Depth</th>
+                  <th className="px-4 py-3 text-center text-sm font-semibold text-gray-900">Images Skipped</th>
+                  <th className="px-4 py-3 text-center text-sm font-semibold text-gray-900">GSC Risk</th>
+                </tr>
+              </thead>
+              <tbody>
+                {batchData.comparison_data.map((site, idx) => (
+                  <tr key={idx} className={idx === 0 ? 'bg-blue-50 border-l-4 border-blue-500' : 'hover:bg-gray-50'}>
+                    <td className="px-4 py-3">
+                      <div className="font-medium text-gray-900">{new URL(site.url).hostname}</div>
+                      {idx === 0 && <div className="text-xs text-blue-600 font-semibold">👑 YOUR SITE</div>}
+                    </td>
+                    <td className="px-4 py-3 text-center">
+                      <span className={`font-bold ${site.dom_errors <= 10 ? 'text-green-600' : site.dom_errors <= 30 ? 'text-yellow-600' : 'text-red-600'}`}>
+                        {site.dom_errors}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-center">
+                      <span className="font-bold text-blue-600">
+                        {site.dom_analysis?.total_nodes || 'N/A'}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-center">
+                      <span className="font-bold text-green-600">
+                        {site.dom_analysis?.accessible_nodes || 'N/A'}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-center">
+                      <span className="font-bold text-purple-600">
+                        {site.dom_analysis?.node_depth || 'N/A'}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-center">
+                      <span className="font-bold text-orange-600">
+                        {site.images_skipped}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-center">
+                      <span className={`px-2 py-1 rounded text-xs font-bold ${
+                        site.gsc_risk === 'LOW' ? 'bg-green-100 text-green-700' :
+                        site.gsc_risk === 'MEDIUM' ? 'bg-yellow-100 text-yellow-700' :
+                        'bg-red-100 text-red-700'
+                      }`}>
+                        {site.gsc_risk}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {/* Key Insights */}
+        <div className="bg-white rounded-lg p-4 border">
+          <h3 className="font-semibold mb-3 text-center">📈 Key Insights</h3>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+            {(() => {
+              const yourSite = batchData.comparison_data[0];
+              const competitors = batchData.comparison_data.slice(1);
+              const bestDomErrors = Math.min(...competitors.map(comp => comp.dom_errors));
+              const avgMobilePerf = Math.round(competitors.reduce((sum, comp) => sum + comp.performance_mobile, 0) / competitors.length);
+              
+              return (
+                <>
+                  <div className="text-center">
+                    <div className="font-semibold text-gray-700">DOM Quality</div>
+                    <div className={`text-lg font-bold ${yourSite.dom_errors <= bestDomErrors ? 'text-green-600' : 'text-red-600'}`}>
+                      {yourSite.dom_errors <= bestDomErrors ? '🥇 Leading' : '🚨 Behind'}
+                    </div>
+                    <div className="text-xs text-gray-500">Your: {yourSite.dom_errors} | Best: {bestDomErrors}</div>
+                  </div>
+                  <div className="text-center">
+                    <div className="font-semibold text-gray-700">Mobile Performance</div>
+                    <div className={`text-lg font-bold ${yourSite.performance_mobile >= avgMobilePerf ? 'text-green-600' : 'text-red-600'}`}>
+                      {yourSite.performance_mobile >= avgMobilePerf ? '📈 Above Avg' : '📉 Below Avg'}
+                    </div>
+                    <div className="text-xs text-gray-500">Your: {yourSite.performance_mobile} | Avg: {avgMobilePerf}</div>
+                  </div>
+                  <div className="text-center">
+                    <div className="font-semibold text-gray-700">GSC Risk</div>
+                    <div className={`text-lg font-bold ${
+                      yourSite.gsc_risk === 'LOW' ? 'text-green-600' :
+                      yourSite.gsc_risk === 'MEDIUM' ? 'text-yellow-600' : 'text-red-600'
+                    }`}>
+                      {yourSite.gsc_risk === 'LOW' ? '✅ Safe' : yourSite.gsc_risk === 'MEDIUM' ? '⚠️ Monitor' : '🚨 Risk'}
+                    </div>
+                    <div className="text-xs text-gray-500">Search Console Impact</div>
+                  </div>
+                </>
+              );
+            })()}
+          </div>
+        </div>
+      </div>
+    );
+  };
   const generateBenchmark = () => {
     if (results.length === 0 || competitorResults.length === 0) return null;
     
@@ -615,7 +813,7 @@ export default function LighthouseDOMAnalyzer() {
         <p className="text-gray-600">
           Advanced DOM analysis and competitive benchmarking using Google's PageSpeed Insights API. Identify technical SEO issues and SERP ranking factors.
         </p>
-        <div className="mt-4 bg-blue-50 border border-blue-200 rounded-lg p-4">
+        <div className="mt-4 bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
           <div className="flex items-center gap-2 mb-2">
             <div className="w-3 h-3 bg-blue-500 rounded-full"></div>
             <strong className="text-blue-900">Specialized Analysis Features:</strong>
@@ -626,6 +824,27 @@ export default function LighthouseDOMAnalyzer() {
             <div>• GSC Impact Risk Assessment - Search Console impact prediction</div>
             <div>• Competitive Benchmarking - Compare against 3 competitors</div>
             <div>• SERP Fall Analysis - Identify technical ranking factors</div>
+          </div>
+        </div>
+        
+        <div className="mt-4 bg-green-50 border-2 border-green-300 rounded-lg p-4">
+          <div className="flex items-center gap-2 mb-2">
+            <div className="text-green-600 text-xl">📊</div>
+            <strong className="text-green-900">Two Ways to Get Comparison Analysis:</strong>
+          </div>
+          <div className="text-sm text-green-800 space-y-2">
+            <div><strong>Method 1 - Dedicated Analysis:</strong></div>
+            <div className="ml-4 space-y-1">
+              <div>• Test your main site in "🏠 Your Main Site Analysis"</div>
+              <div>• Add competitors in "🥊 Competitor Analysis"</div>
+              <div>• Get detailed benchmark dashboard</div>
+            </div>
+            <div><strong>Method 2 - Batch Comparison:</strong></div>
+            <div className="ml-4 space-y-1">
+              <div>• Add all sites to "📋 Batch Comparison Analysis"</div>
+              <div>• Put your main site first in the list</div>
+              <div>• Get side-by-side comparison table with DOM metrics</div>
+            </div>
           </div>
         </div>
       </div>
@@ -685,7 +904,7 @@ export default function LighthouseDOMAnalyzer() {
             type="url"
             value={singleUrl}
             onChange={(e) => setSingleUrl(e.target.value)}
-            placeholder="https://example.com"
+            placeholder="example.com (protocol will be added automatically)"
             className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
           <button
@@ -697,17 +916,24 @@ export default function LighthouseDOMAnalyzer() {
             {isRunning ? 'Testing...' : 'Test URL'}
           </button>
         </div>
+        <div className="text-sm text-gray-600">
+          💡 You can enter URLs with or without https:// - we'll add it automatically if needed
+        </div>
       </div>
 
-      {/* Batch URL Test */}
+      {/* Batch URL Test - Enhanced for Comparison */}
       <div className="bg-gray-50 rounded-lg p-6 mb-8">
-        <h2 className="text-xl font-semibold mb-4">📋 Batch URL Test</h2>
+        <h2 className="text-xl font-semibold mb-4">📋 Batch Comparison Analysis</h2>
+        <p className="text-sm text-purple-600 mb-4">
+          <strong>💡 Alternative approach:</strong> Test multiple sites at once for side-by-side comparison. 
+          <strong>Put your main site first</strong> for best comparison results.
+        </p>
         <div className="mb-4">
           <textarea
             value={batchUrls}
             onChange={(e) => setBatchUrls(e.target.value)}
-            placeholder="https://example.com/page1&#10;https://example.com/page2&#10;https://example.com/page3"
-            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 h-32"
+            placeholder="kasinohai.com (your site - put first!)&#10;bonusetu.com&#10;casinotopsonline.com&#10;bonuskoodit.com&#10;(protocols added automatically)"
+            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 h-32"
           />
         </div>
         <button
@@ -716,21 +942,27 @@ export default function LighthouseDOMAnalyzer() {
           className="px-6 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 flex items-center gap-2"
         >
           <Zap size={20} />
-          {isRunning ? 'Testing...' : 'Test Batch URLs'}
+          {isRunning ? 'Analyzing...' : 'Compare All Sites'}
         </button>
+        <div className="text-sm text-gray-600 mt-2">
+          💡 This will create a detailed comparison table showing DOM metrics, performance scores, and technical insights
+        </div>
       </div>
 
       {/* Competitor Analysis */}
       <div className="bg-orange-50 rounded-lg p-6 mb-8">
         <h2 className="text-xl font-semibold mb-4">🥊 Competitor Analysis</h2>
-        <p className="text-sm text-gray-600 mb-4">
+        <p className="text-sm text-gray-600 mb-2">
           Compare your site's DOM quality and performance against competitors to identify ranking opportunities
+        </p>
+        <p className="text-sm text-orange-600 mb-4">
+          <strong>📊 This will generate the benchmark dashboard above once completed!</strong>
         </p>
         <div className="mb-4">
           <textarea
             value={competitorUrls}
             onChange={(e) => setCompetitorUrls(e.target.value)}
-            placeholder="https://competitor1.com&#10;https://competitor2.com&#10;https://competitor3.com"
+            placeholder="competitor1.com&#10;competitor2.com&#10;competitor3.com&#10;(protocols added automatically)"
             className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 h-24"
           />
         </div>
@@ -744,7 +976,12 @@ export default function LighthouseDOMAnalyzer() {
         </button>
         {results.length === 0 && (
           <div className="mt-2 text-sm text-orange-600">
-            ⚠️ First test your own site above, then analyze competitors
+            ⚠️ First test your own site above, then analyze competitors to get the benchmark comparison
+          </div>
+        )}
+        {results.length > 0 && competitorResults.length === 0 && (
+          <div className="mt-2 text-sm text-green-600">
+            ✅ Your site tested! Now add competitors above to see the benchmark dashboard
           </div>
         )}
       </div>
@@ -769,8 +1006,35 @@ export default function LighthouseDOMAnalyzer() {
         </div>
       )}
 
+      {/* Batch Comparison Table */}
+      <BatchComparisonTable batchData={generateBatchComparison()} />
+
       {/* Benchmark Dashboard */}
-      <BenchmarkDashboard benchmark={generateBenchmark()} />
+      {generateBenchmark() && (
+        <div className="mb-8">
+          <div className="text-center mb-4">
+            <div className="inline-flex items-center gap-2 px-4 py-2 bg-purple-100 text-purple-800 rounded-full text-sm font-semibold">
+              <span>🏆</span>
+              <span>Main Site vs Competitors Benchmark</span>
+              <span>🏆</span>
+            </div>
+          </div>
+          <BenchmarkDashboard benchmark={generateBenchmark()} />
+        </div>
+      )}
+
+      {/* Show placeholder for benchmark when not ready */}
+      {!generateBenchmark() && !generateBatchComparison() && (results.length > 0 || competitorResults.length > 0) && (
+        <div className="mb-8 bg-gray-50 border-2 border-dashed border-gray-300 rounded-lg p-8 text-center">
+          <div className="text-gray-500 mb-2">📊 Comparison Dashboard</div>
+          <div className="text-sm text-gray-600">
+            {results.length === 0 ? 
+              "Test your main site first to enable competitive comparison" :
+              "Add competitors above to see your benchmark comparison dashboard here"
+            }
+          </div>
+        </div>
+      )}
 
       {/* Results */}
       {results.length > 0 && (
