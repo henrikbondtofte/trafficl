@@ -17,6 +17,38 @@ export default function LighthouseDOMAnalyzer() {
     return apiKey && apiKey.trim().length > 0;
   };
 
+  // Test API key function
+  const testApiKey = async () => {
+    if (!apiKey.trim()) {
+      alert('Please enter an API key first');
+      return;
+    }
+
+    setIsRunning(true);
+    try {
+      console.log('Testing API key...', apiKey.substring(0, 10) + '...');
+      
+      const testResponse = await fetch(
+        `https://www.googleapis.com/pagespeedonline/v5/runPagespeed?url=https://www.google.com&strategy=mobile&key=${apiKey.trim()}`
+      );
+      
+      const testData = await testResponse.json();
+      console.log('API Response:', testData);
+      
+      if (testData.error) {
+        console.error('API Error Details:', testData.error);
+        alert(`API Key Test Failed:\n${testData.error.message}\n\nDetails: ${JSON.stringify(testData.error, null, 2)}`);
+      } else {
+        alert('✅ API Key is working correctly!');
+      }
+    } catch (error) {
+      console.error('Test error:', error);
+      alert(`Network Error: ${error.message}`);
+    } finally {
+      setIsRunning(false);
+    }
+  };
+
   // Helper function to open Google PageSpeed Insights
   const openGooglePageSpeed = (url) => {
     const googleUrl = `https://pagespeed.web.dev/report?url=${encodeURIComponent(url)}`;
