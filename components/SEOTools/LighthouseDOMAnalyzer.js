@@ -73,10 +73,16 @@ export default function LighthouseDOMAnalyzer() {
     }));
   };
 
-  // Get audit description
+  // Get audit description - Enhanced for DOM analysis
   const getAuditDescription = (audit) => {
     const descriptions = {
-      'DOM.pushNodeByPathToFrontend: Node not found': 'DOM nodes are missing or not accessible during rendering',
+      'DOM.pushNodeByPathToFrontend: Node not found': 'CRITICAL: DOM nodes are missing or inaccessible during rendering - this can severely impact SEO crawling and user experience',
+      'LH:artifacts:getArtifact globalListeners': 'Lighthouse artifact timing for global event listeners analysis',
+      'LH:artifacts:getArtifact imageElements': 'Lighthouse artifact timing for image elements discovery',
+      'LH:artifacts:getArtifact doctype': 'Lighthouse artifact timing for document type analysis', 
+      'LH:artifacts:getArtifact inspectorIssues': 'Lighthouse artifact timing for Chrome DevTools issues detection',
+      'LH:artifacts:getArtifact inputs': 'Lighthouse artifact timing for form input elements analysis',
+      'LH:artifacts:getArtifact installabilityErrors': 'Lighthouse artifact timing for PWA installability checks',
       'LH:audit:unused-javascript': 'Unused JavaScript code detected, slowing down page load',
       'LH:audit:largest-contentful-paint': 'Largest Contentful Paint is slower than recommended',
       'LH:audit:cumulative-layout-shift': 'Layout shifts detected during page load',
@@ -85,22 +91,33 @@ export default function LighthouseDOMAnalyzer() {
       'LH:audit:interactive': 'Time to Interactive could be improved',
       'LH:audit:total-blocking-time': 'Total Blocking Time is too high'
     };
-    return descriptions[audit] || audit;
+    
+    // Check for specific patterns in the audit string
+    for (const [key, description] of Object.entries(descriptions)) {
+      if (audit.includes(key)) return description;
+    }
+    
+    return audit;
   };
 
-  // Get audit severity
+  // Get audit severity - DOM issues should be HIGH priority
   const getAuditSeverity = (audit) => {
-    const highPriority = ['unused-javascript', 'largest-contentful-paint', 'cumulative-layout-shift'];
+    // DOM analysis issues are HIGH priority for this tool
+    const domHighPriority = ['DOM.pushNodeByPathToFrontend', 'LH:artifacts:getArtifact'];
+    const performanceHighPriority = ['unused-javascript', 'largest-contentful-paint', 'cumulative-layout-shift'];
     const mediumPriority = ['first-contentful-paint', 'speed-index', 'interactive'];
     
-    if (highPriority.some(item => audit.includes(item))) return 'HIGH';
+    if (domHighPriority.some(item => audit.includes(item))) return 'HIGH';
+    if (performanceHighPriority.some(item => audit.includes(item))) return 'HIGH';
     if (mediumPriority.some(item => audit.includes(item))) return 'MEDIUM';
     return 'LOW';
   };
 
-  // Get audit fix
+  // Get audit fix - Enhanced for DOM analysis
   const getAuditFix = (audit) => {
     const fixes = {
+      'DOM.pushNodeByPathToFrontend': 'CRITICAL FIX: Check for missing DOM elements, broken JavaScript that removes nodes, or dynamic content loading issues. This can impact Google\'s ability to crawl your page properly.',
+      'LH:artifacts:getArtifact': 'Performance optimization: High timing values indicate slow artifact processing. Consider reducing page complexity or optimizing render-blocking resources.',
       'unused-javascript': 'Remove unused JavaScript code or implement code splitting',
       'largest-contentful-paint': 'Optimize images, remove render-blocking resources, improve server response times',
       'cumulative-layout-shift': 'Set size attributes on images and videos, avoid inserting content above existing content',
@@ -638,12 +655,74 @@ export default function LighthouseDOMAnalyzer() {
                         </div>
                       )}
 
-                      {/* Audit Results */}
+                      {/* DOM Issues - Separate High-Visibility Section */}
+                      {result.audit_results && result.audit_results.some(audit => audit.includes('DOM.pushNodeByPathToFrontend')) && (
+                        <div className="mb-6">
+                          <h4 className="text-lg font-semibold mb-4 text-red-700">🚨 Critical DOM Issues</h4>
+                          <div className="bg-red-50 border-2 border-red-300 rounded-lg p-4">
+                            <div className="space-y-3">
+                              {result.audit_results
+                                .filter(audit => audit.includes('DOM.pushNodeByPathToFrontend'))
+                                .map((audit, idx) => (
+                                  <div key={idx} className="bg-white p-3 rounded border-l-4 border-red-500">
+                                    <div className="flex items-center justify-between">
+                                      <div className="flex-1">
+                                        <div className="font-bold text-red-700">Node Access Error #{idx + 1}</div>
+                                        <div className="text-sm text-gray-700 mt-1">
+                                          DOM node could not be accessed during rendering analysis
+                                        </div>
+                                      </div>
+                                      <div className="text-right">
+                                        <span className="px-3 py-1 bg-red-100 text-red-700 rounded text-sm font-bold">
+                                          CRITICAL
+                                        </span>
+                                      </div>
+                                    </div>
+                                    <div className="mt-2 text-sm text-gray-600">
+                                      <strong>Impact:</strong> This indicates missing or inaccessible DOM elements that could affect SEO crawling and user experience.
+                                    </div>
+                                  </div>
+                                ))}
+                              <div className="mt-4 p-3 bg-yellow-50 border border-yellow-300 rounded">
+                                <div className="text-sm">
+                                  <strong>⚠️ DOM Analysis Summary:</strong> Found {result.audit_results.filter(audit => audit.includes('DOM.pushNodeByPathToFrontend')).length} inaccessible DOM nodes. 
+                                  This can impact Google's ability to properly crawl and understand your page structure.
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Lighthouse Artifacts Timing */}
+                      {result.audit_results && result.audit_results.some(audit => audit.includes('LH:artifacts:getArtifact')) && (
+                        <div className="mb-6">
+                          <h4 className="text-lg font-semibold mb-4 text-orange-700">⚡ Lighthouse Artifacts Analysis</h4>
+                          <div className="bg-orange-50 border border-orange-300 rounded-lg p-4">
+                            <div className="space-y-2">
+                              {result.audit_results
+                                .filter(audit => audit.includes('LH:artifacts:getArtifact'))
+                                .map((audit, idx) => (
+                                  <div key={idx} className="bg-white p-2 rounded border-l-4 border-orange-400">
+                                    <div className="text-sm font-mono text-gray-800">{audit}</div>
+                                  </div>
+                                ))}
+                            </div>
+                            <div className="mt-3 text-sm text-gray-600">
+                              <strong>Note:</strong> These timing metrics show how long Lighthouse took to analyze different page artifacts. 
+                              High values or "NaN" entries may indicate performance bottlenecks.
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                      {/* Performance Audit Results */}
                       {result.audit_results && result.audit_results.length > 0 && (
                         <div className="mb-6">
-                          <h4 className="text-lg font-semibold mb-4">📝 Lighthouse Audit Results</h4>
+                          <h4 className="text-lg font-semibold mb-4">📝 Performance Audit Results</h4>
                           <div className="space-y-2">
-                            {result.audit_results.map((audit, auditIndex) => (
+                            {result.audit_results
+                              .filter(audit => !audit.includes('DOM.pushNodeByPathToFrontend') && !audit.includes('LH:artifacts:getArtifact'))
+                              .map((audit, auditIndex) => (
                               <div key={auditIndex}>
                                 <button
                                   onClick={() => toggleAuditDetails(index, auditIndex)}
