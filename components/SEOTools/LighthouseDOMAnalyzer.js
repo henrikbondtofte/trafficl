@@ -2,9 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Zap, Download, ExternalLink, Eye, FileText, AlertCircle } from 'lucide-react';
 
 export default function LighthouseDOMAnalyzer() {
-  // Set your API key directly here
-  const API_KEY = '';
-  
+  const [apiKey, setApiKey] = useState('');
   const [singleUrl, setSingleUrl] = useState('');
   const [batchUrls, setBatchUrls] = useState('');
   const [results, setResults] = useState([]);
@@ -16,7 +14,7 @@ export default function LighthouseDOMAnalyzer() {
 
   // Check if API key is ready
   const isApiKeyReady = () => {
-    return API_KEY && API_KEY !== 'AIzaSyAF4j61pzPAjPjCjZSkbvB_0LVBm-r1lFc';
+    return apiKey && apiKey.trim().length > 0;
   };
 
   // Helper function to open Google PageSpeed Insights
@@ -136,14 +134,14 @@ export default function LighthouseDOMAnalyzer() {
   const runPageSpeedInsights = async (url) => {
     try {
       const mobileResponse = await fetch(
-        `https://www.googleapis.com/pagespeedonline/v5/runPagespeed?url=${encodeURIComponent(url)}&strategy=mobile&key=${API_KEY}`
+        `https://www.googleapis.com/pagespeedonline/v5/runPagespeed?url=${encodeURIComponent(url)}&strategy=mobile&key=${apiKey}`
       );
       const mobileData = await mobileResponse.json();
 
       await new Promise(resolve => setTimeout(resolve, 2000));
 
       const desktopResponse = await fetch(
-        `https://www.googleapis.com/pagespeedonline/v5/runPagespeed?url=${encodeURIComponent(url)}&strategy=desktop&key=${API_KEY}`
+        `https://www.googleapis.com/pagespeedonline/v5/runPagespeed?url=${encodeURIComponent(url)}&strategy=desktop&key=${apiKey}`
       );
       const desktopData = await desktopResponse.json();
 
@@ -265,6 +263,30 @@ export default function LighthouseDOMAnalyzer() {
         </p>
       </div>
 
+      {/* API Key Input */}
+      <div className="bg-gray-50 rounded-lg p-6 mb-8">
+        <h2 className="text-xl font-semibold mb-4">🔑 API Key Setup</h2>
+        <div className="flex gap-4 items-center">
+          <input
+            type="password"
+            value={apiKey}
+            onChange={(e) => setApiKey(e.target.value)}
+            placeholder="Paste your Google PageSpeed Insights API key here"
+            className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+          <div className={`px-4 py-2 rounded-lg font-medium ${
+            isApiKeyReady() 
+              ? 'bg-green-100 text-green-700' 
+              : 'bg-red-100 text-red-700'
+          }`}>
+            {isApiKeyReady() ? '✅ Ready' : '❌ Required'}
+          </div>
+        </div>
+        <div className="mt-2 text-sm text-gray-600">
+          Get your API key from: <a href="https://developers.google.com/speed/docs/insights/v5/get-started" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">Google PageSpeed Insights API</a>
+        </div>
+      </div>
+
       {/* API Key Status */}
       {isApiKeyReady() ? (
         <div className="bg-green-50 border border-green-200 rounded-lg p-4 mb-8">
@@ -277,7 +299,7 @@ export default function LighthouseDOMAnalyzer() {
         <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-8">
           <div className="flex items-center gap-3">
             <div className="text-red-600 font-medium">❌ API Key Required</div>
-            <div className="text-sm text-gray-600">Set your API key in the code: const API_KEY = 'YOUR_KEY_HERE';</div>
+            <div className="text-sm text-gray-600">Please enter your Google PageSpeed Insights API key above</div>
           </div>
         </div>
       )}
