@@ -1,4 +1,4 @@
-// 🔥 VERCEL-FIXED Lighthouse CLI API Route
+// 🔥 LIGHTHOUSE CLI API - VERCEL FIXED
 // File: /pages/api/lighthouse-dom.js
 
 import { exec } from 'child_process';
@@ -26,24 +26,23 @@ export default async function handler(req, res) {
     const timestamp = Date.now();
     const outputPath = path.join('/tmp', `lighthouse-${timestamp}.json`);
     
-    // NO mkdir needed - /tmp exists on Vercel
     console.log('📁 Output path:', outputPath);
     
-    // Run Lighthouse CLI with JSON output for DOM data - Vercel compatible
-    const lighthouseCommand = `npx lighthouse "${url}" --output json --output-path "${outputPath}" --chrome-flags="--headless --no-sandbox --disable-dev-shm-usage --disable-gpu --disable-dev-tools --no-first-run --no-zygote --single-process" --preset=desktop --quiet --no-enable-error-reporting`;
+    // Run Lighthouse CLI with JSON output for DOM data
+    const lighthouseCommand = `npx lighthouse "${url}" --output json --output-path "${outputPath}" --chrome-flags="--headless --no-sandbox --disable-dev-shm-usage --disable-gpu --no-first-run --no-zygote --single-process" --preset=desktop --quiet`;
     
-    console.log('🚀 Executing Lighthouse CLI with Vercel-compatible flags...');
+    console.log('🚀 Executing Lighthouse CLI...');
+    console.log('Command:', lighthouseCommand);
     
-    // Execute Lighthouse CLI with increased timeout and memory
+    // Execute Lighthouse CLI (timeout after 60 seconds)
     await execAsync(lighthouseCommand, { 
-      timeout: 120000, // 2 minutes
-      maxBuffer: 1024 * 1024 * 50, // 50MB buffer
+      timeout: 60000,
+      maxBuffer: 1024 * 1024 * 10, // 10MB buffer
       env: {
         ...process.env,
-        // Force Lighthouse to use system Chrome if available
-        LIGHTHOUSE_CHROMIUM_PATH: '/usr/bin/google-chrome-stable',
-        // Disable Lighthouse Chrome download
-        LIGHTHOUSE_DISABLE_CHROMIUM_DOWNLOAD: 'true'
+        NODE_ENV: 'production',
+        // Try to use chrome-aws-lambda's Chrome
+        PUPPETEER_EXECUTABLE_PATH: '/opt/google/chrome/google-chrome',
       }
     });
     
@@ -70,37 +69,19 @@ export default async function handler(req, res) {
       success: true,
       url: url,
       domData: domData,
-      timestamp: new Date().toISOString(),
-      vercelCompatible: true
+      timestamp: new Date().toISOString()
     });
     
   } catch (error) {
     console.error('❌ Lighthouse CLI error:', error);
     
-    // Enhanced error reporting for debugging
-    const errorResponse = {
+    res.status(500).json({
       success: false,
       error: error.message,
       url: url,
       details: 'Lighthouse CLI execution failed on Vercel',
-      errorCode: error.code,
-      errorType: error.constructor.name,
-      suggestion: 'Check Vercel function logs for details'
-    };
-
-    // Add specific error handling
-    if (error.message.includes('ENOENT')) {
-      errorResponse.details = 'File/directory not found - Chrome browser missing';
-      errorResponse.suggestion = 'Lighthouse requires Chrome browser which may not be available on Vercel';
-    } else if (error.message.includes('timeout')) {
-      errorResponse.details = 'Lighthouse execution timed out';
-      errorResponse.suggestion = 'Try a simpler website or increase timeout';
-    } else if (error.message.includes('spawn')) {
-      errorResponse.details = 'Cannot spawn Chrome process';
-      errorResponse.suggestion = 'Chrome/Chromium not available in Vercel environment';
-    }
-    
-    res.status(500).json(errorResponse);
+      lighthouse_command: `npx lighthouse "${url}" --output json --output-path "/tmp/lighthouse-${Date.now()}.json" --chrome-flags="--headless --no-sandbox --disable-dev-shm-usage --disable-gpu --no-first-run --no-zygote --single-process" --preset=desktop --quiet`
+    });
   }
 }
 
@@ -142,17 +123,11 @@ function extractDOMDataFromCLI(lighthouseResults) {
     console.log('⚠️ No dom-size audit data found');
   }
   
-  // Fallback: try numericValue from dom-size
-  if (domNodes === 0 && audits['dom-size'] && audits['dom-size'].numericValue) {
-    domNodes = audits['dom-size'].numericValue;
-    console.log('🏗️ DOM Nodes from numericValue:', domNodes);
-  }
-  
-  // Extract additional DOM insights
+  // Extract additional DOM insights from Lighthouse
   const mainDocumentDOMNodes = audits['dom-size']?.numericValue || domNodes;
   const domScore = audits['dom-size']?.score !== null ? audits['dom-size'].score : 1;
   
-  // Extract performance timing
+  // Extract performance timing that affects DOM rendering
   const performanceMetrics = {
     fcp: audits['first-contentful-paint']?.numericValue || 0,
     lcp: audits['largest-contentful-paint']?.numericValue || 0,
@@ -162,7 +137,7 @@ function extractDOMDataFromCLI(lighthouseResults) {
     speed_index: audits['speed-index']?.numericValue || 0
   };
   
-  // Extract critical DOM-related issues
+  // Extract critical DOM-related errors
   const domRelatedIssues = [];
   
   Object.keys(audits).forEach(auditKey => {
@@ -246,10 +221,6 @@ function extractDOMDataFromCLI(lighthouseResults) {
     // RENDER BLOCKING ANALYSIS
     render_blocking_resources: audits['render-blocking-resources']?.details?.items?.length || 0,
     unused_css: audits['unused-css-rules']?.details?.items?.length || 0,
-    unused_js: audits['unused-javascript']?.details?.items?.length || 0,
-    
-    // VERCEL EXECUTION INFO
-    vercel_execution: true,
-    temp_file_path: '/tmp'
+    unused_js: audits['unused-javascript']?.details?.items?.length || 0
   };
 }
