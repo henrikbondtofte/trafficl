@@ -91,7 +91,6 @@ export default function LighthouseDOMAnalyzer() {
     if (typeof apiObject === 'number') return apiObject;
     if (typeof apiObject === 'string') return parseFloat(apiObject) || 0;
     if (apiObject && typeof apiObject === 'object') {
-      // Handle Google API objects with granularity, type, value structure
       if ('value' in apiObject) return typeof apiObject.value === 'number' ? apiObject.value : 0;
       if ('numericValue' in apiObject) return typeof apiObject.numericValue === 'number' ? apiObject.numericValue : 0;
     }
@@ -107,10 +106,10 @@ export default function LighthouseDOMAnalyzer() {
   };
 
   // Extract real DOM data from Lighthouse API response - FIXED FOR REACT ERROR #31
-  const extractRealDOMData = (lighthouseResult) => {
+  const extractRealDOMDataFromPageSpeed = (lighthouseResult) => {
     const audits = lighthouseResult.audits;
     
-    // Extract real page size from network requests
+    // Extract real page size using MULTIPLE methods for accuracy
     let totalSizeKB = 0;
     let resourceBreakdown = {
       html_kb: 0,
@@ -120,33 +119,46 @@ export default function LighthouseDOMAnalyzer() {
       other_kb: 0
     };
 
-    // Get total transfer size from network-requests audit
-    if (audits['network-requests'] && audits['network-requests'].details && audits['network-requests'].details.items) {
+    // METHOD 1: Try total-byte-weight audit first (most reliable)
+    if (audits['total-byte-weight'] && audits['total-byte-weight'].numericValue) {
+      totalSizeKB = safeExtractValue(audits['total-byte-weight'].numericValue) / 1024;
+      console.log('📦 Using total-byte-weight:', (totalSizeKB / 1024).toFixed(2) + ' MB');
+    }
+
+    // METHOD 2: If total-byte-weight not available, use network requests
+    if (totalSizeKB === 0 && audits['network-requests'] && audits['network-requests'].details && audits['network-requests'].details.items) {
       const networkRequests = audits['network-requests'].details.items;
       
       networkRequests.forEach(request => {
         const transferSize = safeExtractValue(request.transferSize);
+        const resourceSize = safeExtractValue(request.resourceSize);
+        
         totalSizeKB += transferSize / 1024;
+        
+        // Use resourceSize for breakdown (uncompressed is more accurate)
+        const sizeToUse = resourceSize > 0 ? resourceSize : transferSize;
         
         // Categorize by resource type
         const url = request.url || '';
         const mimeType = request.mimeType || '';
         
         if (mimeType.includes('text/html') || url.includes('.html')) {
-          resourceBreakdown.html_kb += transferSize / 1024;
+          resourceBreakdown.html_kb += sizeToUse / 1024;
         } else if (mimeType.includes('text/css') || url.includes('.css')) {
-          resourceBreakdown.css_kb += transferSize / 1024;
+          resourceBreakdown.css_kb += sizeToUse / 1024;
         } else if (mimeType.includes('javascript') || url.includes('.js')) {
-          resourceBreakdown.js_kb += transferSize / 1024;
+          resourceBreakdown.js_kb += sizeToUse / 1024;
         } else if (mimeType.includes('image/') || url.match(/\.(png|jpg|jpeg|gif|webp|svg)$/)) {
-          resourceBreakdown.images_kb += transferSize / 1024;
+          resourceBreakdown.images_kb += sizeToUse / 1024;
         } else {
-          resourceBreakdown.other_kb += transferSize / 1024;
+          resourceBreakdown.other_kb += sizeToUse / 1024;
         }
       });
+      
+      console.log('📦 Using network requests:', (totalSizeKB / 1024).toFixed(2) + ' MB');
     }
 
-    // Extract DOM complexity from dom-size audit - FIXED TO PREVENT REACT ERROR
+    // DOM complexity from dom-size audit - Limited data from PageSpeed API
     let domNodes = 0;
     let domDepth = 0;
     let maxChildren = 0;
@@ -154,9 +166,9 @@ export default function LighthouseDOMAnalyzer() {
     if (audits['dom-size'] && audits['dom-size'].details && audits['dom-size'].details.items) {
       const domItems = audits['dom-size'].details.items;
       
-      // Safely extract DOM data with proper object handling
+      // PageSpeed API may have limited DOM data
       if (domItems[0]) {
-        domNodes = safeExtractValue(domItems[0]); // This fixes the React error!
+        domNodes = safeExtractValue(domItems[0]);
       }
       if (domItems[1]) {
         domDepth = safeExtractValue(domItems[1]);
@@ -212,7 +224,7 @@ export default function LighthouseDOMAnalyzer() {
       dom_depth: Math.round(domDepth) || 0,
       max_children: Math.round(maxChildren) || 0,
       dom_errors: Math.round(domErrors) || 0,
-      critical_issues: criticalIssues.filter(issue => typeof issue === 'string'), // Ensure string array
+      critical_issues: criticalIssues.filter(issue => typeof issue === 'string'),
       crawl_impact: crawlImpact,
       performance_metrics: {
         fcp: Math.round(performanceMetrics.fcp) || 0,
@@ -227,28 +239,28 @@ export default function LighthouseDOMAnalyzer() {
         js_kb: Math.round(resourceBreakdown.js_kb) || 0,
         images_kb: Math.round(resourceBreakdown.images_kb) || 0,
         other_kb: Math.round(resourceBreakdown.other_kb) || 0
-      }
+      },
+      data_source: 'PageSpeed API'
     };
   };
 
-  // Run PageSpeed Insights API call with REAL DOM Analysis - REACT ERROR FIXED
-  const runPageSpeedInsights = async (url) => {
+  // NEW: Hybrid analysis function - combines PageSpeed API + Lighthouse CLI
+  const runHybridAnalysis = async (url) => {
     const fullUrl = ensureProtocol(url);
     
     try {
-      console.log('🚀 Testing URL:', fullUrl);
-      console.log('🔑 Using API key:', apiKey.substring(0, 10) + '...');
+      console.log('🔄 Starting HYBRID analysis for:', fullUrl);
+      
+      // STEP 1: Get performance data from PageSpeed API (fast)
+      console.log('📱 Step 1: PageSpeed API for performance scores...');
       
       const mobileResponse = await fetch(
         `https://www.googleapis.com/pagespeedonline/v5/runPagespeed?url=${encodeURIComponent(fullUrl)}&strategy=mobile&key=${apiKey.trim()}&category=performance&category=seo&category=accessibility&category=best-practices`
       );
       const mobileData = await mobileResponse.json();
       
-      console.log('📱 Mobile API Response:', mobileData);
-
       if (mobileData.error) {
-        console.error('❌ Mobile API Error:', mobileData.error);
-        throw new Error(`${mobileData.error.message} (${mobileData.error.code || 'Unknown'})`);
+        throw new Error(`PageSpeed API error: ${mobileData.error.message}`);
       }
 
       await new Promise(resolve => setTimeout(resolve, 3000)); // Rate limiting
@@ -258,24 +270,50 @@ export default function LighthouseDOMAnalyzer() {
       );
       const desktopData = await desktopResponse.json();
       
-      console.log('🖥️ Desktop API Response:', desktopData);
-
       if (desktopData.error) {
-        console.error('❌ Desktop API Error:', desktopData.error);
-        throw new Error(`${desktopData.error.message} (${desktopData.error.code || 'Unknown'})`);
+        throw new Error(`PageSpeed API error: ${desktopData.error.message}`);
       }
 
-      // Extract REAL DOM data from mobile lighthouse result - NOW REACT-SAFE!
+      // Extract basic data from PageSpeed API
       const lighthouse = mobileData.lighthouseResult;
-      const realDOMData = extractRealDOMData(lighthouse);
-
-      // Calculate GSC Impact Risk based on real performance - SAFELY
+      const pagespeedDOMData = extractRealDOMDataFromPageSpeed(lighthouse);
+      
+      // STEP 2: Get DOM data from Lighthouse CLI (slow but accurate)
+      console.log('🔍 Step 2: Lighthouse CLI for REAL DOM data...');
+      
+      let lighthouseDOMData = null;
+      let analysisMethod = 'HYBRID';
+      
+      try {
+        const domResponse = await fetch('/api/lighthouse-dom', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ url: fullUrl })
+        });
+        
+        const domResult = await domResponse.json();
+        
+        if (domResult.success) {
+          lighthouseDOMData = domResult.domData;
+          console.log('✅ Lighthouse CLI data received:', lighthouseDOMData);
+        } else {
+          console.log('⚠️ Lighthouse CLI failed, using PageSpeed API only');
+          analysisMethod = 'FALLBACK_PAGESPEED_ONLY';
+        }
+      } catch (error) {
+        console.log('⚠️ Lighthouse CLI unavailable, using PageSpeed API only:', error.message);
+        analysisMethod = 'FALLBACK_PAGESPEED_ONLY';
+      }
+      
+      // Calculate GSC Impact Risk based on real performance
       const performanceScore = safeExtractValue(lighthouse.categories?.performance?.score);
       const gscRisk = performanceScore < 0.5 ? 'HIGH' : 
                      performanceScore < 0.8 ? 'MEDIUM' : 'LOW';
 
-      // Return clean, React-safe result object with only primitive values
-      const result = {
+      // STEP 3: Merge PageSpeed + Lighthouse CLI data
+      const hybridResult = {
         url: fullUrl,
         performance_mobile: Math.round((safeExtractValue(mobileData.lighthouseResult?.categories?.performance?.score) || 0) * 100),
         performance_desktop: Math.round((safeExtractValue(desktopData.lighthouseResult?.categories?.performance?.score) || 0) * 100),
@@ -283,42 +321,60 @@ export default function LighthouseDOMAnalyzer() {
         best_practices: Math.round((safeExtractValue(mobileData.lighthouseResult?.categories?.['best-practices']?.score) || 0) * 100),
         seo: Math.round((safeExtractValue(mobileData.lighthouseResult?.categories?.seo?.score) || 0) * 100),
         
-        // REAL DOM Analysis metrics (NOW REACT-SAFE - NO MORE COMPLEX OBJECTS!)
-        page_size_mb: realDOMData.page_size_mb,
-        dom_nodes: realDOMData.dom_nodes,
-        dom_depth: realDOMData.dom_depth,
-        max_children: realDOMData.max_children,
-        dom_errors: realDOMData.dom_errors,
-        crawl_impact: realDOMData.crawl_impact,
-        gsc_risk: gscRisk,
-        critical_issues: realDOMData.critical_issues,
-        performance_metrics: realDOMData.performance_metrics,
-        resource_breakdown: realDOMData.resource_breakdown,
+        // DOM Data - Use Lighthouse CLI if available, otherwise PageSpeed API
+        dom_nodes: lighthouseDOMData ? lighthouseDOMData.dom_nodes : pagespeedDOMData.dom_nodes,
+        dom_depth: lighthouseDOMData ? lighthouseDOMData.dom_depth : pagespeedDOMData.dom_depth,
+        max_children: lighthouseDOMData ? lighthouseDOMData.max_children : pagespeedDOMData.max_children,
+        dom_errors: lighthouseDOMData ? lighthouseDOMData.dom_issues_count : pagespeedDOMData.dom_errors,
         
-        // Additional analysis - REACT-SAFE
+        // Page size from PageSpeed API (works well)
+        page_size_mb: pagespeedDOMData.page_size_mb,
+        
+        // Crawl impact - use Lighthouse CLI if available
+        crawl_impact: lighthouseDOMData ? lighthouseDOMData.crawlability_risk : pagespeedDOMData.crawl_impact,
+        gsc_risk: gscRisk,
+        
+        // Critical issues - combine both sources
+        critical_issues: [
+          ...pagespeedDOMData.critical_issues,
+          ...(lighthouseDOMData ? lighthouseDOMData.dom_related_issues.map(issue => `${issue.audit}: ${issue.title}`) : [])
+        ],
+        
+        // Performance metrics
+        performance_metrics: pagespeedDOMData.performance_metrics,
+        resource_breakdown: pagespeedDOMData.resource_breakdown,
+        
+        // DOM analysis - enhanced if Lighthouse CLI available
         dom_analysis: {
-          total_nodes: realDOMData.dom_nodes,
-          node_depth: realDOMData.dom_depth,
-          max_children: realDOMData.max_children,
-          critical_path_length: Math.ceil((realDOMData.dom_depth || 0) / 3)
+          total_nodes: lighthouseDOMData ? lighthouseDOMData.dom_nodes : pagespeedDOMData.dom_nodes,
+          node_depth: lighthouseDOMData ? lighthouseDOMData.dom_depth : pagespeedDOMData.dom_depth,
+          max_children: lighthouseDOMData ? lighthouseDOMData.max_children : pagespeedDOMData.max_children,
+          crawlability_score: lighthouseDOMData ? lighthouseDOMData.crawlability_score : null,
+          critical_path_length: Math.ceil((lighthouseDOMData ? lighthouseDOMData.dom_depth : pagespeedDOMData.dom_depth) / 3)
         },
+        
+        // Metadata
+        analysis_method: analysisMethod,
+        lighthouse_version: lighthouseDOMData ? lighthouseDOMData.google_lighthouse_version : 'PageSpeed API only',
+        data_sources: lighthouseDOMData ? ['PageSpeed Insights API', 'Lighthouse CLI'] : ['PageSpeed Insights API'],
+        
         status: 'success'
       };
 
-      console.log('✅ REAL DOM analysis result (React-safe):', result);
-      return result;
+      console.log('✅ HYBRID analysis complete:', hybridResult);
+      return hybridResult;
 
     } catch (error) {
-      console.error('🚨 DOM Analysis Error:', error);
+      console.error('🚨 Hybrid analysis error:', error);
       return {
         url: fullUrl,
-        error: String(error.message || 'Unknown error'), // Ensure string
+        error: String(error.message || 'Unknown error'),
         status: 'error'
       };
     }
   };
 
-  // Run single URL test
+  // Run single URL test - UPDATED to use hybrid analysis
   const runSingleTest = async () => {
     if (!singleUrl.trim()) {
       alert('❌ Please enter a URL to test');
@@ -336,7 +392,7 @@ export default function LighthouseDOMAnalyzer() {
 
     try {
       setProgress({ current: 1, total: 1 });
-      const result = await runPageSpeedInsights(singleUrl.trim());
+      const result = await runHybridAnalysis(singleUrl.trim());
       setResults([result]);
     } catch (error) {
       console.error('Single test error:', error);
@@ -346,7 +402,7 @@ export default function LighthouseDOMAnalyzer() {
     }
   };
 
-  // Run batch URL tests
+  // Run batch URL tests - UPDATED to use hybrid analysis
   const runBatchTest = async () => {
     const urls = batchUrls.split('\n').filter(url => url.trim());
     if (urls.length === 0) {
@@ -369,7 +425,7 @@ export default function LighthouseDOMAnalyzer() {
       if (url) {
         try {
           setProgress({ current: i + 1, total: urls.length });
-          const result = await runPageSpeedInsights(url);
+          const result = await runHybridAnalysis(url);
           batchResults.push(result);
           setResults([...batchResults]);
           
@@ -386,7 +442,7 @@ export default function LighthouseDOMAnalyzer() {
     setIsRunning(false);
   };
 
-  // Run competitor analysis
+  // Run competitor analysis - UPDATED to use hybrid analysis
   const runCompetitorAnalysis = async () => {
     const urls = competitorUrls.split('\n').filter(url => url.trim());
     if (urls.length === 0) {
@@ -409,7 +465,7 @@ export default function LighthouseDOMAnalyzer() {
       if (url) {
         try {
           setProgress({ current: i + 1, total: urls.length });
-          const result = await runPageSpeedInsights(url);
+          const result = await runHybridAnalysis(url);
           compResults.push(result);
           setCompetitorResults([...compResults]);
           
@@ -585,6 +641,7 @@ export default function LighthouseDOMAnalyzer() {
                   <th className="px-4 py-3 text-center font-bold">🖥️ Desktop<br/>Perf</th>
                   <th className="px-4 py-3 text-center font-bold">🏆 Crawl<br/>Score</th>
                   <th className="px-4 py-3 text-center font-bold">🔍 Verify</th>
+                  <th className="px-4 py-3 text-center font-bold">📊 Data<br/>Source</th>
                 </tr>
               </thead>
               <tbody>
@@ -666,8 +723,11 @@ export default function LighthouseDOMAnalyzer() {
                           domNodes <= 1200 ? 'text-green-600' :
                           domNodes <= 1800 ? 'text-yellow-600' : 'text-red-600'
                         }`}>
-                          {domNodes.toLocaleString()}
+                          {domNodes === 0 ? 'N/A' : domNodes.toLocaleString()}
                         </div>
+                        {domNodes === 0 && (
+                          <div className="text-xs text-orange-500">Limited API</div>
+                        )}
                       </td>
                       
                       {/* DOM Depth */}
@@ -676,8 +736,11 @@ export default function LighthouseDOMAnalyzer() {
                           domDepth <= 25 ? 'text-green-600' :
                           domDepth <= 32 ? 'text-yellow-600' : 'text-red-600'
                         }`}>
-                          {domDepth}
+                          {domDepth === 0 ? 'N/A' : domDepth}
                         </div>
+                        {domDepth === 0 && (
+                          <div className="text-xs text-orange-500">Limited API</div>
+                        )}
                       </td>
                       
                       {/* Mobile Performance */}
@@ -720,6 +783,18 @@ export default function LighthouseDOMAnalyzer() {
                           <ExternalLink size={14} />
                           Check
                         </button>
+                      </td>
+                      
+                      {/* Data Source */}
+                      <td className="px-4 py-4 text-center">
+                        <div className={`text-xs px-2 py-1 rounded font-bold ${
+                          site.analysis_method === 'HYBRID' ? 'bg-green-100 text-green-700' :
+                          site.analysis_method === 'FALLBACK_PAGESPEED_ONLY' ? 'bg-orange-100 text-orange-700' :
+                          'bg-gray-100 text-gray-700'
+                        }`}>
+                          {site.analysis_method === 'HYBRID' ? '🔥 HYBRID' :
+                           site.analysis_method === 'FALLBACK_PAGESPEED_ONLY' ? '⚠️ API' : 'API'}
+                        </div>
                       </td>
                     </tr>
                   );
@@ -801,13 +876,16 @@ export default function LighthouseDOMAnalyzer() {
                 <div className="flex justify-between">
                   <span>Your site:</span>
                   <span className={`font-bold ${Math.round(your_site.max_children || 0) <= 60 ? 'text-green-600' : 'text-red-600'}`}>
-                    {Math.round(your_site.max_children || 0)} max
+                    {Math.round(your_site.max_children || 0) === 0 ? 'N/A' : Math.round(your_site.max_children || 0) + ' max'}
                   </span>
                 </div>
                 <div className="flex justify-between">
                   <span>Best competitor:</span>
                   <span className="font-bold text-green-600">
-                    {Math.min(...competitorResults.filter(c => c.status === 'success').map(c => Math.round(c.max_children || 0)))} max
+                    {(() => {
+                      const min = Math.min(...competitorResults.filter(c => c.status === 'success').map(c => Math.round(c.max_children || 0)));
+                      return min === 0 ? 'N/A' : min + ' max';
+                    })()}
                   </span>
                 </div>
                 <div className="text-xs text-gray-600 mt-2">
@@ -838,24 +916,25 @@ export default function LighthouseDOMAnalyzer() {
     <div className="max-w-7xl mx-auto p-6 bg-white">
       <div className="mb-8">
         <h1 className="text-4xl font-bold text-gray-900 mb-4">
-          🔍 Real-Time Lighthouse DOM Analyzer & Competitor Benchmark
+          🔥 HYBRID Lighthouse DOM Analyzer & Competitor Benchmark
         </h1>
         <p className="text-gray-600 text-lg">
-          Live Google PageSpeed Insights API analysis focusing on DOM crawlability, child elements monitoring, and competitive intelligence. 
-          NO FAKE DATA - All metrics are extracted directly from Google's real-time analysis.
+          Revolutionary hybrid approach: Fast PageSpeed Insights API + Accurate Lighthouse CLI for REAL DOM data. 
+          NO FAKE DATA - Performance scores from API, DOM structure from CLI.
         </p>
         
         <div className="mt-4 bg-green-50 border-2 border-green-300 rounded-lg p-4">
           <div className="flex items-center gap-2 mb-2">
-            <div className="text-green-600 text-xl">✅</div>
-            <strong className="text-green-900">100% REAL DATA GUARANTEE:</strong>
+            <div className="text-green-600 text-xl">🔥</div>
+            <strong className="text-green-900">HYBRID ANALYSIS FEATURES:</strong>
           </div>
           <div className="text-sm text-green-800 space-y-1">
-            <div>• DOM Nodes, Depth & Children extracted from Google's dom-size audit</div>
-            <div>• Page Size calculated from actual network-requests data</div>
-            <div>• DOM Errors based on real Lighthouse audit failures</div>
-            <div>• Performance scores directly from Google PageSpeed API</div>
-            <div>• Verify links provided for every site tested</div>
+            <div>• 🚀 <strong>Fast Performance Scores:</strong> PageSpeed Insights API (5-10 seconds)</div>
+            <div>• 🏗️ <strong>REAL DOM Data:</strong> Lighthouse CLI execution (15-30 seconds)</div>
+            <div>• 📊 <strong>Accurate Metrics:</strong> True nodes, depth & children counts</div>
+            <div>• 🔄 <strong>Fallback Protection:</strong> Works even if CLI fails</div>
+            <div>• 🎯 <strong>Google Thresholds:</strong> Official crawlability scoring</div>
+            <div>• 🔍 <strong>Data Source Tags:</strong> See which method provided each metric</div>
           </div>
         </div>
       </div>
@@ -911,11 +990,11 @@ export default function LighthouseDOMAnalyzer() {
             className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2"
           >
             <Zap size={20} />
-            {isRunning ? 'Analyzing...' : 'Analyze Site'}
+            {isRunning ? 'Analyzing...' : 'Hybrid Analysis'}
           </button>
         </div>
         <div className="text-sm text-gray-600">
-          💡 Test your main site first, then add competitors below for the full comparison
+          🔥 Hybrid analysis: Fast API performance + Accurate CLI DOM data (15-30 seconds total)
         </div>
       </div>
 
@@ -996,6 +1075,15 @@ export default function LighthouseDOMAnalyzer() {
                       <Eye size={16} />
                       {showDetails[index] ? 'Hide Details' : 'Show Details'}
                     </button>
+                    {/* Data Source Indicator */}
+                    <div className={`px-3 py-1 rounded-lg text-sm font-bold ${
+                      result.analysis_method === 'HYBRID' ? 'bg-green-100 text-green-700' :
+                      result.analysis_method === 'FALLBACK_PAGESPEED_ONLY' ? 'bg-orange-100 text-orange-700' :
+                      'bg-gray-100 text-gray-700'
+                    }`}>
+                      {result.analysis_method === 'HYBRID' ? '🔥 HYBRID' :
+                       result.analysis_method === 'FALLBACK_PAGESPEED_ONLY' ? '⚠️ API ONLY' : 'API'}
+                    </div>
                   </div>
                 </div>
               </div>
@@ -1027,34 +1115,57 @@ export default function LighthouseDOMAnalyzer() {
                     </div>
                     <div className="bg-yellow-100 p-3 rounded-lg text-center">
                       <div className="text-sm text-gray-600">Max Children</div>
-                      <div className="text-2xl font-bold text-yellow-600">{Math.round(result.max_children || 0)}</div>
+                      <div className="text-2xl font-bold text-yellow-600">
+                        {Math.round(result.max_children || 0) === 0 ? 'N/A' : Math.round(result.max_children || 0)}
+                      </div>
                     </div>
                   </div>
+
+                  {/* REAL DOM Structure Display */}
+                  {result.analysis_method === 'HYBRID' && (
+                    <div className="bg-green-50 border-2 border-green-300 rounded-lg p-4 mb-4">
+                      <div className="flex items-center gap-2 mb-3">
+                        <div className="text-green-600 text-xl">🏗️</div>
+                        <strong className="text-green-900">REAL DOM Structure (Lighthouse CLI)</strong>
+                      </div>
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                        <div className="text-center">
+                          <div className="text-2xl font-bold text-blue-600">{Math.round(result.dom_nodes || 0).toLocaleString()}</div>
+                          <div className="text-sm text-gray-500">DOM Nodes</div>
+                          <div className="text-xs text-gray-400">
+                            {Math.round(result.dom_nodes || 0) > 1500 ? '⚠️ High' : '✅ Good'}
+                          </div>
+                        </div>
+                        <div className="text-center">
+                          <div className="text-2xl font-bold text-purple-600">{Math.round(result.dom_depth || 0)}</div>
+                          <div className="text-sm text-gray-500">DOM Depth</div>
+                          <div className="text-xs text-gray-400">
+                            {Math.round(result.dom_depth || 0) > 32 ? '⚠️ Deep' : '✅ Good'}
+                          </div>
+                        </div>
+                        <div className="text-center">
+                          <div className="text-2xl font-bold text-orange-600">{Math.round(result.max_children || 0)}</div>
+                          <div className="text-sm text-gray-500">Max Children</div>
+                          <div className="text-xs text-gray-400">
+                            {Math.round(result.max_children || 0) > 60 ? '🚨 Google Limit!' : '✅ OK'}
+                          </div>
+                        </div>
+                        <div className="text-center">
+                          <div className="text-2xl font-bold text-green-600">
+                            {result.dom_analysis?.crawlability_score || calculateCrawlabilityScore(result)}
+                          </div>
+                          <div className="text-sm text-gray-500">Crawl Score</div>
+                          <div className="text-xs text-gray-400">/100</div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
 
                   {/* Detailed Analysis */}
                   {showDetails[index] && (
                     <div className="border-t pt-6">
-                      <h4 className="text-lg font-semibold mb-4">🔍 Real DOM Structure Analysis</h4>
-                      <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-6">
-                        <div className="bg-gray-50 p-3 rounded-lg">
-                          <div className="text-sm text-gray-600">Total DOM Nodes</div>
-                          <div className="font-bold text-xl">{Math.round(result.dom_nodes || 0).toLocaleString()}</div>
-                        </div>
-                        <div className="bg-gray-50 p-3 rounded-lg">
-                          <div className="text-sm text-gray-600">DOM Depth</div>
-                          <div className="font-bold text-xl">{Math.round(result.dom_depth || 0)}</div>
-                        </div>
-                        <div className="bg-gray-50 p-3 rounded-lg">
-                          <div className="text-sm text-gray-600">Crawl Impact</div>
-                          <div className={`font-bold text-xl ${
-                            result.crawl_impact === 'LOW' ? 'text-green-600' :
-                            result.crawl_impact === 'MEDIUM' ? 'text-yellow-600' : 'text-red-600'
-                          }`}>
-                            {result.crawl_impact || 'LOW'}
-                          </div>
-                        </div>
-                      </div>
-
+                      <h4 className="text-lg font-semibold mb-4">🔍 Complete Analysis Details</h4>
+                      
                       {/* Resource Breakdown - SAFELY RENDERED */}
                       {result.resource_breakdown && (
                         <div className="mb-6">
@@ -1083,6 +1194,22 @@ export default function LighthouseDOMAnalyzer() {
                           </div>
                         </div>
                       )}
+
+                      {/* Analysis Method Info */}
+                      <div className="bg-gray-50 p-4 rounded-lg">
+                        <h4 className="text-lg font-semibold mb-2">📊 Analysis Method & Data Sources</h4>
+                        <div className="text-sm space-y-2">
+                          <div><strong>Method:</strong> {result.analysis_method}</div>
+                          <div><strong>Data Sources:</strong> {result.data_sources?.join(', ') || 'PageSpeed API'}</div>
+                          <div><strong>Lighthouse Version:</strong> {result.lighthouse_version || 'N/A'}</div>
+                          {result.analysis_method === 'HYBRID' && (
+                            <div className="text-green-700 font-semibold">✅ Full hybrid analysis with real DOM data from Lighthouse CLI</div>
+                          )}
+                          {result.analysis_method === 'FALLBACK_PAGESPEED_ONLY' && (
+                            <div className="text-orange-700 font-semibold">⚠️ Lighthouse CLI unavailable - using PageSpeed API only</div>
+                          )}
+                        </div>
+                      </div>
                     </div>
                   )}
                 </>
@@ -1094,17 +1221,17 @@ export default function LighthouseDOMAnalyzer() {
 
       {/* Footer */}
       <div className="bg-gray-50 p-6 rounded-lg mt-8">
-        <h3 className="text-xl font-bold text-gray-900 mb-4">🔧 Real-Time DOM Analysis & Competitive Intelligence</h3>
+        <h3 className="text-xl font-bold text-gray-900 mb-4">🔥 Hybrid DOM Analysis & Competitive Intelligence</h3>
         <p className="mb-4 text-gray-700">
-          This tool extracts real DOM structure data, page sizes, and performance metrics directly from Google's PageSpeed Insights API. 
-          No simulated data - everything is based on Google's actual analysis of your sites.
+          Revolutionary hybrid approach combining fast PageSpeed Insights API with accurate Lighthouse CLI execution for the first time getting REAL DOM structure data directly from Google's analysis engine.
         </p>
         <div className="text-sm text-gray-600 space-y-2">
-          <div><strong>🏗️ Real DOM Analysis:</strong> Actual node counts, depth, and children from Google's dom-size audit</div>
-          <div><strong>📦 Real Page Size:</strong> Calculated from network-requests audit data</div>
-          <div><strong>🚨 Real DOM Errors:</strong> Based on actual Lighthouse audit failures</div>
+          <div><strong>🚀 Fast Performance:</strong> PageSpeed API delivers scores in 5-10 seconds</div>
+          <div><strong>🏗️ Accurate DOM Data:</strong> Lighthouse CLI provides real nodes, depth, and children counts</div>
+          <div><strong>📦 Real Page Size:</strong> Calculated from actual network-requests data</div>
           <div><strong>🔍 Verification Links:</strong> Check every result against Google PageSpeed directly</div>
           <div><strong>🥊 Competitive Intelligence:</strong> Compare crawlability using Google's thresholds</div>
+          <div><strong>🔄 Fallback Protection:</strong> Works even if CLI fails - graceful degradation</div>
         </div>
       </div>
     </div>
