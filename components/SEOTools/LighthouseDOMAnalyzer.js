@@ -86,7 +86,27 @@ export default function LighthouseDOMAnalyzer() {
     return `https://${trimmedUrl}`;
   };
 
-  // Extract real DOM data from Lighthouse API response
+  // Safe value extraction from API objects - FIXES REACT ERROR #31
+  const safeExtractValue = (apiObject) => {
+    if (typeof apiObject === 'number') return apiObject;
+    if (typeof apiObject === 'string') return parseFloat(apiObject) || 0;
+    if (apiObject && typeof apiObject === 'object') {
+      // Handle Google API objects with granularity, type, value structure
+      if ('value' in apiObject) return typeof apiObject.value === 'number' ? apiObject.value : 0;
+      if ('numericValue' in apiObject) return typeof apiObject.numericValue === 'number' ? apiObject.numericValue : 0;
+    }
+    return 0;
+  };
+
+  // Safe string extraction from API arrays/objects
+  const safeExtractString = (apiData) => {
+    if (typeof apiData === 'string') return apiData;
+    if (Array.isArray(apiData)) return apiData.filter(item => typeof item === 'string').join(', ');
+    if (apiData && typeof apiData === 'object' && 'title' in apiData) return apiData.title || '';
+    return '';
+  };
+
+  // Extract real DOM data from Lighthouse API response - FIXED FOR REACT ERROR #31
   const extractRealDOMData = (lighthouseResult) => {
     const audits = lighthouseResult.audits;
     
@@ -105,7 +125,7 @@ export default function LighthouseDOMAnalyzer() {
       const networkRequests = audits['network-requests'].details.items;
       
       networkRequests.forEach(request => {
-        const transferSize = request.transferSize || 0;
+        const transferSize = safeExtractValue(request.transferSize);
         totalSizeKB += transferSize / 1024;
         
         // Categorize by resource type
@@ -126,47 +146,51 @@ export default function LighthouseDOMAnalyzer() {
       });
     }
 
-    // Extract DOM complexity from dom-size audit
+    // Extract DOM complexity from dom-size audit - FIXED TO PREVENT REACT ERROR
     let domNodes = 0;
     let domDepth = 0;
     let maxChildren = 0;
     
     if (audits['dom-size'] && audits['dom-size'].details && audits['dom-size'].details.items) {
-      const domData = audits['dom-size'].details.items[0];
-      if (domData) {
-        domNodes = domData.value || 0;
-        if (audits['dom-size'].details.items[1]) {
-          domDepth = audits['dom-size'].details.items[1].value || 0;
-        }
-        if (audits['dom-size'].details.items[2]) {
-          maxChildren = audits['dom-size'].details.items[2].value || 0;
-        }
+      const domItems = audits['dom-size'].details.items;
+      
+      // Safely extract DOM data with proper object handling
+      if (domItems[0]) {
+        domNodes = safeExtractValue(domItems[0]); // This fixes the React error!
+      }
+      if (domItems[1]) {
+        domDepth = safeExtractValue(domItems[1]);
+      }
+      if (domItems[2]) {
+        maxChildren = safeExtractValue(domItems[2]);
       }
     }
 
-    // Extract performance metrics for DOM analysis
+    // Extract performance metrics for DOM analysis - SAFELY
     const performanceMetrics = {
-      fcp: audits['first-contentful-paint']?.numericValue || 0,
-      lcp: audits['largest-contentful-paint']?.numericValue || 0,
-      cls: audits['cumulative-layout-shift']?.numericValue || 0,
-      tbt: audits['total-blocking-time']?.numericValue || 0,
-      speed_index: audits['speed-index']?.numericValue || 0
+      fcp: safeExtractValue(audits['first-contentful-paint']?.numericValue),
+      lcp: safeExtractValue(audits['largest-contentful-paint']?.numericValue),
+      cls: safeExtractValue(audits['cumulative-layout-shift']?.numericValue),
+      tbt: safeExtractValue(audits['total-blocking-time']?.numericValue),
+      speed_index: safeExtractValue(audits['speed-index']?.numericValue)
     };
 
-    // Count actual audit failures and warnings
+    // Count actual audit failures and warnings - SAFELY HANDLED
     let domErrors = 0;
     let criticalIssues = [];
     
     // Check for critical DOM/rendering issues
     Object.entries(audits).forEach(([auditKey, audit]) => {
-      if (audit.score !== null && audit.score < 0.9) {
+      const score = safeExtractValue(audit.score);
+      if (score !== null && score < 0.9) {
         if (auditKey.includes('dom') || 
             auditKey.includes('render') || 
             auditKey.includes('layout') ||
             auditKey.includes('contentful-paint') ||
             auditKey.includes('blocking')) {
           domErrors++;
-          criticalIssues.push(`${auditKey}: ${audit.title}`);
+          const title = safeExtractString(audit.title) || auditKey;
+          criticalIssues.push(`${auditKey}: ${title}`);
         }
       }
     });
@@ -181,26 +205,33 @@ export default function LighthouseDOMAnalyzer() {
       crawlImpact = 'MEDIUM';
     }
 
+    // Return clean, React-safe object with only primitive values
     return {
-      page_size_mb: Math.round(pageSizeMB * 100) / 100, // Real page size
-      dom_nodes: domNodes, // Real DOM node count
-      dom_depth: domDepth, // Real DOM depth  
-      max_children: maxChildren, // Real max children per element
-      dom_errors: domErrors, // Real audit failures
-      critical_issues: criticalIssues,
+      page_size_mb: Math.round(pageSizeMB * 100) / 100,
+      dom_nodes: Math.round(domNodes) || 0,
+      dom_depth: Math.round(domDepth) || 0,
+      max_children: Math.round(maxChildren) || 0,
+      dom_errors: Math.round(domErrors) || 0,
+      critical_issues: criticalIssues.filter(issue => typeof issue === 'string'), // Ensure string array
       crawl_impact: crawlImpact,
-      performance_metrics: performanceMetrics,
+      performance_metrics: {
+        fcp: Math.round(performanceMetrics.fcp) || 0,
+        lcp: Math.round(performanceMetrics.lcp) || 0,
+        cls: Math.round(performanceMetrics.cls * 1000) / 1000 || 0,
+        tbt: Math.round(performanceMetrics.tbt) || 0,
+        speed_index: Math.round(performanceMetrics.speed_index) || 0
+      },
       resource_breakdown: {
-        html_kb: Math.round(resourceBreakdown.html_kb),
-        css_kb: Math.round(resourceBreakdown.css_kb),
-        js_kb: Math.round(resourceBreakdown.js_kb),
-        images_kb: Math.round(resourceBreakdown.images_kb),
-        other_kb: Math.round(resourceBreakdown.other_kb)
+        html_kb: Math.round(resourceBreakdown.html_kb) || 0,
+        css_kb: Math.round(resourceBreakdown.css_kb) || 0,
+        js_kb: Math.round(resourceBreakdown.js_kb) || 0,
+        images_kb: Math.round(resourceBreakdown.images_kb) || 0,
+        other_kb: Math.round(resourceBreakdown.other_kb) || 0
       }
     };
   };
 
-  // Run PageSpeed Insights API call with REAL DOM Analysis
+  // Run PageSpeed Insights API call with REAL DOM Analysis - REACT ERROR FIXED
   const runPageSpeedInsights = async (url) => {
     const fullUrl = ensureProtocol(url);
     
@@ -234,24 +265,25 @@ export default function LighthouseDOMAnalyzer() {
         throw new Error(`${desktopData.error.message} (${desktopData.error.code || 'Unknown'})`);
       }
 
-      // Extract REAL DOM data from mobile lighthouse result
+      // Extract REAL DOM data from mobile lighthouse result - NOW REACT-SAFE!
       const lighthouse = mobileData.lighthouseResult;
       const realDOMData = extractRealDOMData(lighthouse);
 
-      // Calculate GSC Impact Risk based on real performance
-      const performanceScore = lighthouse.categories.performance.score;
+      // Calculate GSC Impact Risk based on real performance - SAFELY
+      const performanceScore = safeExtractValue(lighthouse.categories?.performance?.score);
       const gscRisk = performanceScore < 0.5 ? 'HIGH' : 
                      performanceScore < 0.8 ? 'MEDIUM' : 'LOW';
 
+      // Return clean, React-safe result object with only primitive values
       const result = {
         url: fullUrl,
-        performance_mobile: Math.round((mobileData.lighthouseResult?.categories?.performance?.score || 0) * 100),
-        performance_desktop: Math.round((desktopData.lighthouseResult?.categories?.performance?.score || 0) * 100),
-        accessibility: Math.round((mobileData.lighthouseResult?.categories?.accessibility?.score || 0) * 100),
-        best_practices: Math.round((mobileData.lighthouseResult?.categories?.['best-practices']?.score || 0) * 100),
-        seo: Math.round((mobileData.lighthouseResult?.categories?.seo?.score || 0) * 100),
+        performance_mobile: Math.round((safeExtractValue(mobileData.lighthouseResult?.categories?.performance?.score) || 0) * 100),
+        performance_desktop: Math.round((safeExtractValue(desktopData.lighthouseResult?.categories?.performance?.score) || 0) * 100),
+        accessibility: Math.round((safeExtractValue(mobileData.lighthouseResult?.categories?.accessibility?.score) || 0) * 100),
+        best_practices: Math.round((safeExtractValue(mobileData.lighthouseResult?.categories?.['best-practices']?.score) || 0) * 100),
+        seo: Math.round((safeExtractValue(mobileData.lighthouseResult?.categories?.seo?.score) || 0) * 100),
         
-        // REAL DOM Analysis metrics (NO MORE FAKE DATA!)
+        // REAL DOM Analysis metrics (NOW REACT-SAFE - NO MORE COMPLEX OBJECTS!)
         page_size_mb: realDOMData.page_size_mb,
         dom_nodes: realDOMData.dom_nodes,
         dom_depth: realDOMData.dom_depth,
@@ -263,24 +295,24 @@ export default function LighthouseDOMAnalyzer() {
         performance_metrics: realDOMData.performance_metrics,
         resource_breakdown: realDOMData.resource_breakdown,
         
-        // Additional analysis
+        // Additional analysis - REACT-SAFE
         dom_analysis: {
           total_nodes: realDOMData.dom_nodes,
           node_depth: realDOMData.dom_depth,
           max_children: realDOMData.max_children,
-          critical_path_length: Math.ceil(realDOMData.dom_depth / 3)
+          critical_path_length: Math.ceil((realDOMData.dom_depth || 0) / 3)
         },
         status: 'success'
       };
 
-      console.log('✅ REAL DOM analysis result:', result);
+      console.log('✅ REAL DOM analysis result (React-safe):', result);
       return result;
 
     } catch (error) {
       console.error('🚨 DOM Analysis Error:', error);
       return {
         url: fullUrl,
-        error: error.message,
+        error: String(error.message || 'Unknown error'), // Ensure string
         status: 'error'
       };
     }
@@ -308,7 +340,7 @@ export default function LighthouseDOMAnalyzer() {
       setResults([result]);
     } catch (error) {
       console.error('Single test error:', error);
-      setResults([{ url: ensureProtocol(singleUrl.trim()), error: error.message, status: 'error' }]);
+      setResults([{ url: ensureProtocol(singleUrl.trim()), error: String(error.message), status: 'error' }]);
     } finally {
       setIsRunning(false);
     }
@@ -346,7 +378,7 @@ export default function LighthouseDOMAnalyzer() {
           }
         } catch (error) {
           console.error(`Batch test error for ${url}:`, error);
-          batchResults.push({ url: ensureProtocol(url), error: error.message, status: 'error' });
+          batchResults.push({ url: ensureProtocol(url), error: String(error.message), status: 'error' });
         }
       }
     }
@@ -386,7 +418,7 @@ export default function LighthouseDOMAnalyzer() {
           }
         } catch (error) {
           console.error(`Competitor analysis error for ${url}:`, error);
-          compResults.push({ url: ensureProtocol(url), error: error.message, status: 'error' });
+          compResults.push({ url: ensureProtocol(url), error: String(error.message), status: 'error' });
         }
       }
     }
@@ -399,25 +431,30 @@ export default function LighthouseDOMAnalyzer() {
     let score = 100;
     
     // DOM Errors (critical for crawling)
-    if (site.dom_errors > 30) score -= 40;
-    else if (site.dom_errors > 10) score -= 20;
-    else if (site.dom_errors > 5) score -= 10;
+    const domErrors = Math.round(site.dom_errors || 0);
+    if (domErrors > 30) score -= 40;
+    else if (domErrors > 10) score -= 20;
+    else if (domErrors > 5) score -= 10;
     
     // Max Children (Google threshold: 60+)
-    if (site.max_children > 60) score -= 30;
-    else if (site.max_children > 40) score -= 15;
+    const maxChildren = Math.round(site.max_children || 0);
+    if (maxChildren > 60) score -= 30;
+    else if (maxChildren > 40) score -= 15;
     
     // Page Size (crawl budget impact)
-    if (site.page_size_mb > 3) score -= 25;
-    else if (site.page_size_mb > 1.5) score -= 10;
+    const pageSize = parseFloat(site.page_size_mb || 0);
+    if (pageSize > 3) score -= 25;
+    else if (pageSize > 1.5) score -= 10;
     
     // DOM Nodes
-    if (site.dom_nodes > 1800) score -= 15;
-    else if (site.dom_nodes > 1200) score -= 8;
+    const domNodes = Math.round(site.dom_nodes || 0);
+    if (domNodes > 1800) score -= 15;
+    else if (domNodes > 1200) score -= 8;
     
     // DOM Depth
-    if (site.dom_depth > 32) score -= 10;
-    else if (site.dom_depth > 25) score -= 5;
+    const domDepth = Math.round(site.dom_depth || 0);
+    if (domDepth > 32) score -= 10;
+    else if (domDepth > 25) score -= 5;
     
     return Math.max(0, score);
   };
@@ -435,7 +472,7 @@ export default function LighthouseDOMAnalyzer() {
     // Combine all sites with your site first
     const allSites = [yourSite, ...validCompetitors];
     
-    // Calculate crawlability scores
+    // Calculate crawlability scores - SAFELY
     const sitesWithScores = allSites.map(site => ({
       ...site,
       crawlability_score: calculateCrawlabilityScore(site),
@@ -474,10 +511,10 @@ export default function LighthouseDOMAnalyzer() {
               <div className="text-xl font-bold text-green-900 mb-2">{winner.hostname}</div>
               <div className="text-lg text-green-800 mb-4">Score: {winner.crawlability_score}/100</div>
               <div className="grid grid-cols-2 gap-2 text-sm">
-                <div>DOM Errors: <span className="font-bold">{winner.dom_errors}</span></div>
-                <div>Max Children: <span className="font-bold">{winner.max_children}</span></div>
-                <div>Page Size: <span className="font-bold">{winner.page_size_mb}MB</span></div>
-                <div>DOM Nodes: <span className="font-bold">{winner.dom_nodes}</span></div>
+                <div>DOM Errors: <span className="font-bold">{Math.round(winner.dom_errors || 0)}</span></div>
+                <div>Max Children: <span className="font-bold">{Math.round(winner.max_children || 0)}</span></div>
+                <div>Page Size: <span className="font-bold">{parseFloat(winner.page_size_mb || 0).toFixed(1)}MB</span></div>
+                <div>DOM Nodes: <span className="font-bold">{Math.round(winner.dom_nodes || 0).toLocaleString()}</span></div>
               </div>
               <button
                 onClick={() => openGooglePageSpeed(winner.url)}
@@ -493,10 +530,10 @@ export default function LighthouseDOMAnalyzer() {
               <div className="text-xl font-bold text-red-900 mb-2">{loser.hostname}</div>
               <div className="text-lg text-red-800 mb-4">Score: {loser.crawlability_score}/100</div>
               <div className="grid grid-cols-2 gap-2 text-sm">
-                <div>DOM Errors: <span className="font-bold">{loser.dom_errors}</span></div>
-                <div>Max Children: <span className="font-bold">{loser.max_children}</span></div>
-                <div>Page Size: <span className="font-bold">{loser.page_size_mb}MB</span></div>
-                <div>DOM Nodes: <span className="font-bold">{loser.dom_nodes}</span></div>
+                <div>DOM Errors: <span className="font-bold">{Math.round(loser.dom_errors || 0)}</span></div>
+                <div>Max Children: <span className="font-bold">{Math.round(loser.max_children || 0)}</span></div>
+                <div>Page Size: <span className="font-bold">{parseFloat(loser.page_size_mb || 0).toFixed(1)}MB</span></div>
+                <div>DOM Nodes: <span className="font-bold">{Math.round(loser.dom_nodes || 0).toLocaleString()}</span></div>
               </div>
               <button
                 onClick={() => openGooglePageSpeed(loser.url)}
@@ -556,6 +593,15 @@ export default function LighthouseDOMAnalyzer() {
                   const rank = ranked_sites.findIndex(s => s.url === site.url) + 1;
                   const crawlScore = site.crawlability_score || calculateCrawlabilityScore(site);
                   
+                  // Safe value extraction for display
+                  const domErrors = Math.round(site.dom_errors || 0);
+                  const maxChildren = Math.round(site.max_children || 0);
+                  const pageSize = parseFloat(site.page_size_mb || 0);
+                  const domNodes = Math.round(site.dom_nodes || 0);
+                  const domDepth = Math.round(site.dom_depth || 0);
+                  const mobilePref = Math.round(site.performance_mobile || 0);
+                  const desktopPerf = Math.round(site.performance_desktop || 0);
+                  
                   return (
                     <tr key={idx} className={`border-b-2 ${
                       isYourSite ? 'bg-blue-50 border-l-4 border-blue-500' : 'hover:bg-gray-50'
@@ -574,83 +620,83 @@ export default function LighthouseDOMAnalyzer() {
                       {/* DOM Errors - MOST CRITICAL */}
                       <td className="px-4 py-4 text-center">
                         <div className={`text-3xl font-bold ${
-                          site.dom_errors === 0 ? 'text-green-600' :
-                          site.dom_errors <= 5 ? 'text-green-500' :
-                          site.dom_errors <= 10 ? 'text-yellow-600' :
-                          site.dom_errors <= 30 ? 'text-orange-600' : 'text-red-600'
+                          domErrors === 0 ? 'text-green-600' :
+                          domErrors <= 5 ? 'text-green-500' :
+                          domErrors <= 10 ? 'text-yellow-600' :
+                          domErrors <= 30 ? 'text-orange-600' : 'text-red-600'
                         }`}>
-                          {site.dom_errors}
+                          {domErrors}
                         </div>
                         <div className="text-xs text-gray-500">
-                          {site.dom_errors === 0 ? 'Perfect' :
-                           site.dom_errors <= 10 ? 'Good' :
-                           site.dom_errors <= 30 ? 'Warning' : 'Critical'}
+                          {domErrors === 0 ? 'Perfect' :
+                           domErrors <= 10 ? 'Good' :
+                           domErrors <= 30 ? 'Warning' : 'Critical'}
                         </div>
                       </td>
                       
                       {/* Max Children */}
                       <td className="px-4 py-4 text-center">
                         <div className={`text-2xl font-bold ${
-                          site.max_children <= 40 ? 'text-green-600' :
-                          site.max_children <= 60 ? 'text-yellow-600' : 'text-red-600'
+                          maxChildren <= 40 ? 'text-green-600' :
+                          maxChildren <= 60 ? 'text-yellow-600' : 'text-red-600'
                         }`}>
-                          {site.max_children}
+                          {maxChildren}
                         </div>
                         <div className="text-xs text-gray-500">
-                          {site.max_children > 60 ? 'Above Google limit!' : 'OK'}
+                          {maxChildren > 60 ? 'Above Google limit!' : 'OK'}
                         </div>
                       </td>
                       
                       {/* Page Size */}
                       <td className="px-4 py-4 text-center">
                         <div className={`text-2xl font-bold ${
-                          site.page_size_mb <= 1.5 ? 'text-green-600' :
-                          site.page_size_mb <= 3 ? 'text-yellow-600' : 'text-red-600'
+                          pageSize <= 1.5 ? 'text-green-600' :
+                          pageSize <= 3 ? 'text-yellow-600' : 'text-red-600'
                         }`}>
-                          {site.page_size_mb}
+                          {pageSize.toFixed(1)}
                         </div>
                         <div className="text-xs text-gray-500">
-                          {site.page_size_mb > 3 ? 'Heavy' : site.page_size_mb > 1.5 ? 'Moderate' : 'Light'}
+                          {pageSize > 3 ? 'Heavy' : pageSize > 1.5 ? 'Moderate' : 'Light'}
                         </div>
                       </td>
                       
                       {/* DOM Nodes */}
                       <td className="px-4 py-4 text-center">
                         <div className={`text-xl font-bold ${
-                          site.dom_nodes <= 1200 ? 'text-green-600' :
-                          site.dom_nodes <= 1800 ? 'text-yellow-600' : 'text-red-600'
+                          domNodes <= 1200 ? 'text-green-600' :
+                          domNodes <= 1800 ? 'text-yellow-600' : 'text-red-600'
                         }`}>
-                          {site.dom_nodes.toLocaleString()}
+                          {domNodes.toLocaleString()}
                         </div>
                       </td>
                       
                       {/* DOM Depth */}
                       <td className="px-4 py-4 text-center">
                         <div className={`text-xl font-bold ${
-                          site.dom_depth <= 25 ? 'text-green-600' :
-                          site.dom_depth <= 32 ? 'text-yellow-600' : 'text-red-600'
+                          domDepth <= 25 ? 'text-green-600' :
+                          domDepth <= 32 ? 'text-yellow-600' : 'text-red-600'
                         }`}>
-                          {site.dom_depth}
+                          {domDepth}
                         </div>
                       </td>
                       
                       {/* Mobile Performance */}
                       <td className="px-4 py-4 text-center">
                         <div className={`text-xl font-bold ${
-                          site.performance_mobile >= 90 ? 'text-green-600' :
-                          site.performance_mobile >= 50 ? 'text-yellow-600' : 'text-red-600'
+                          mobilePref >= 90 ? 'text-green-600' :
+                          mobilePref >= 50 ? 'text-yellow-600' : 'text-red-600'
                         }`}>
-                          {site.performance_mobile}
+                          {mobilePref}
                         </div>
                       </td>
                       
                       {/* Desktop Performance */}
                       <td className="px-4 py-4 text-center">
                         <div className={`text-xl font-bold ${
-                          site.performance_desktop >= 90 ? 'text-green-600' :
-                          site.performance_desktop >= 50 ? 'text-yellow-600' : 'text-red-600'
+                          desktopPerf >= 90 ? 'text-green-600' :
+                          desktopPerf >= 50 ? 'text-yellow-600' : 'text-red-600'
                         }`}>
-                          {site.performance_desktop}
+                          {desktopPerf}
                         </div>
                       </td>
                       
@@ -694,24 +740,24 @@ export default function LighthouseDOMAnalyzer() {
               <div className="space-y-2 text-sm">
                 <div className="flex justify-between">
                   <span>Your site:</span>
-                  <span className={`font-bold ${your_site.dom_errors <= 10 ? 'text-green-600' : 'text-red-600'}`}>
-                    {your_site.dom_errors} errors
+                  <span className={`font-bold ${Math.round(your_site.dom_errors || 0) <= 10 ? 'text-green-600' : 'text-red-600'}`}>
+                    {Math.round(your_site.dom_errors || 0)} errors
                   </span>
                 </div>
                 <div className="flex justify-between">
                   <span>Best competitor:</span>
                   <span className="font-bold text-green-600">
-                    {Math.min(...competitorResults.filter(c => c.status === 'success').map(c => c.dom_errors))} errors
+                    {Math.min(...competitorResults.filter(c => c.status === 'success').map(c => Math.round(c.dom_errors || 0)))} errors
                   </span>
                 </div>
                 <div className="flex justify-between">
                   <span>Worst competitor:</span>
                   <span className="font-bold text-red-600">
-                    {Math.max(...competitorResults.filter(c => c.status === 'success').map(c => c.dom_errors))} errors
+                    {Math.max(...competitorResults.filter(c => c.status === 'success').map(c => Math.round(c.dom_errors || 0)))} errors
                   </span>
                 </div>
               </div>
-              {your_site.dom_errors > 10 && (
+              {Math.round(your_site.dom_errors || 0) > 10 && (
                 <div className="mt-2 p-2 bg-red-50 text-red-700 text-xs rounded">
                   ⚠️ High DOM errors can prevent Google from properly crawling your site!
                 </div>
@@ -724,24 +770,24 @@ export default function LighthouseDOMAnalyzer() {
               <div className="space-y-2 text-sm">
                 <div className="flex justify-between">
                   <span>Your site:</span>
-                  <span className={`font-bold ${your_site.page_size_mb <= 3 ? 'text-green-600' : 'text-red-600'}`}>
-                    {your_site.page_size_mb}MB
+                  <span className={`font-bold ${parseFloat(your_site.page_size_mb || 0) <= 3 ? 'text-green-600' : 'text-red-600'}`}>
+                    {parseFloat(your_site.page_size_mb || 0).toFixed(1)}MB
                   </span>
                 </div>
                 <div className="flex justify-between">
                   <span>Lightest competitor:</span>
                   <span className="font-bold text-green-600">
-                    {Math.min(...competitorResults.filter(c => c.status === 'success').map(c => c.page_size_mb))}MB
+                    {Math.min(...competitorResults.filter(c => c.status === 'success').map(c => parseFloat(c.page_size_mb || 0))).toFixed(1)}MB
                   </span>
                 </div>
                 <div className="flex justify-between">
                   <span>Heaviest competitor:</span>
                   <span className="font-bold text-red-600">
-                    {Math.max(...competitorResults.filter(c => c.status === 'success').map(c => c.page_size_mb))}MB
+                    {Math.max(...competitorResults.filter(c => c.status === 'success').map(c => parseFloat(c.page_size_mb || 0))).toFixed(1)}MB
                   </span>
                 </div>
               </div>
-              {your_site.page_size_mb > 3 && (
+              {parseFloat(your_site.page_size_mb || 0) > 3 && (
                 <div className="mt-2 p-2 bg-orange-50 text-orange-700 text-xs rounded">
                   ⚠️ Large pages waste crawl budget and slow indexing!
                 </div>
@@ -754,21 +800,21 @@ export default function LighthouseDOMAnalyzer() {
               <div className="space-y-2 text-sm">
                 <div className="flex justify-between">
                   <span>Your site:</span>
-                  <span className={`font-bold ${your_site.max_children <= 60 ? 'text-green-600' : 'text-red-600'}`}>
-                    {your_site.max_children} max
+                  <span className={`font-bold ${Math.round(your_site.max_children || 0) <= 60 ? 'text-green-600' : 'text-red-600'}`}>
+                    {Math.round(your_site.max_children || 0)} max
                   </span>
                 </div>
                 <div className="flex justify-between">
                   <span>Best competitor:</span>
                   <span className="font-bold text-green-600">
-                    {Math.min(...competitorResults.filter(c => c.status === 'success').map(c => c.max_children))} max
+                    {Math.min(...competitorResults.filter(c => c.status === 'success').map(c => Math.round(c.max_children || 0)))} max
                   </span>
                 </div>
                 <div className="text-xs text-gray-600 mt-2">
                   Google recommends max 60 children per parent element
                 </div>
               </div>
-              {your_site.max_children > 60 && (
+              {Math.round(your_site.max_children || 0) > 60 && (
                 <div className="mt-2 p-2 bg-red-50 text-red-700 text-xs rounded">
                   🚨 Exceeds Google's 60 children threshold!
                 </div>
@@ -961,27 +1007,27 @@ export default function LighthouseDOMAnalyzer() {
                 </div>
               ) : (
                 <>
-                  {/* Quick Metrics */}
+                  {/* Quick Metrics - SAFELY RENDERED */}
                   <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
                     <div className="bg-blue-100 p-3 rounded-lg text-center">
                       <div className="text-sm text-gray-600">Mobile Performance</div>
-                      <div className="text-2xl font-bold text-blue-600">{result.performance_mobile}</div>
+                      <div className="text-2xl font-bold text-blue-600">{Math.round(result.performance_mobile || 0)}</div>
                     </div>
                     <div className="bg-green-100 p-3 rounded-lg text-center">
                       <div className="text-sm text-gray-600">Desktop Performance</div>
-                      <div className="text-2xl font-bold text-green-600">{result.performance_desktop}</div>
+                      <div className="text-2xl font-bold text-green-600">{Math.round(result.performance_desktop || 0)}</div>
                     </div>
                     <div className="bg-red-100 p-3 rounded-lg text-center">
                       <div className="text-sm text-gray-600">DOM Errors</div>
-                      <div className="text-2xl font-bold text-red-600">{result.dom_errors}</div>
+                      <div className="text-2xl font-bold text-red-600">{Math.round(result.dom_errors || 0)}</div>
                     </div>
                     <div className="bg-purple-100 p-3 rounded-lg text-center">
                       <div className="text-sm text-gray-600">Page Size</div>
-                      <div className="text-2xl font-bold text-purple-600">{result.page_size_mb}MB</div>
+                      <div className="text-2xl font-bold text-purple-600">{parseFloat(result.page_size_mb || 0).toFixed(1)}MB</div>
                     </div>
                     <div className="bg-yellow-100 p-3 rounded-lg text-center">
                       <div className="text-sm text-gray-600">Max Children</div>
-                      <div className="text-2xl font-bold text-yellow-600">{result.max_children}</div>
+                      <div className="text-2xl font-bold text-yellow-600">{Math.round(result.max_children || 0)}</div>
                     </div>
                   </div>
 
@@ -992,11 +1038,11 @@ export default function LighthouseDOMAnalyzer() {
                       <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-6">
                         <div className="bg-gray-50 p-3 rounded-lg">
                           <div className="text-sm text-gray-600">Total DOM Nodes</div>
-                          <div className="font-bold text-xl">{result.dom_nodes?.toLocaleString()}</div>
+                          <div className="font-bold text-xl">{Math.round(result.dom_nodes || 0).toLocaleString()}</div>
                         </div>
                         <div className="bg-gray-50 p-3 rounded-lg">
                           <div className="text-sm text-gray-600">DOM Depth</div>
-                          <div className="font-bold text-xl">{result.dom_depth}</div>
+                          <div className="font-bold text-xl">{Math.round(result.dom_depth || 0)}</div>
                         </div>
                         <div className="bg-gray-50 p-3 rounded-lg">
                           <div className="text-sm text-gray-600">Crawl Impact</div>
@@ -1004,35 +1050,35 @@ export default function LighthouseDOMAnalyzer() {
                             result.crawl_impact === 'LOW' ? 'text-green-600' :
                             result.crawl_impact === 'MEDIUM' ? 'text-yellow-600' : 'text-red-600'
                           }`}>
-                            {result.crawl_impact}
+                            {result.crawl_impact || 'LOW'}
                           </div>
                         </div>
                       </div>
 
-                      {/* Resource Breakdown */}
+                      {/* Resource Breakdown - SAFELY RENDERED */}
                       {result.resource_breakdown && (
                         <div className="mb-6">
                           <h4 className="text-lg font-semibold mb-4">📦 Real Resource Breakdown</h4>
                           <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
                             <div className="bg-gray-50 p-3 rounded-lg">
                               <div className="text-sm text-gray-600">HTML</div>
-                              <div className="font-bold">{result.resource_breakdown.html_kb} KB</div>
+                              <div className="font-bold">{Math.round(result.resource_breakdown.html_kb || 0)} KB</div>
                             </div>
                             <div className="bg-blue-50 p-3 rounded-lg">
                               <div className="text-sm text-gray-600">CSS</div>
-                              <div className="font-bold text-blue-600">{result.resource_breakdown.css_kb} KB</div>
+                              <div className="font-bold text-blue-600">{Math.round(result.resource_breakdown.css_kb || 0)} KB</div>
                             </div>
                             <div className="bg-yellow-50 p-3 rounded-lg">
                               <div className="text-sm text-gray-600">JavaScript</div>
-                              <div className="font-bold text-yellow-600">{result.resource_breakdown.js_kb} KB</div>
+                              <div className="font-bold text-yellow-600">{Math.round(result.resource_breakdown.js_kb || 0)} KB</div>
                             </div>
                             <div className="bg-green-50 p-3 rounded-lg">
                               <div className="text-sm text-gray-600">Images</div>
-                              <div className="font-bold text-green-600">{result.resource_breakdown.images_kb} KB</div>
+                              <div className="font-bold text-green-600">{Math.round(result.resource_breakdown.images_kb || 0)} KB</div>
                             </div>
                             <div className="bg-purple-50 p-3 rounded-lg">
                               <div className="text-sm text-gray-600">Other</div>
-                              <div className="font-bold text-purple-600">{result.resource_breakdown.other_kb} KB</div>
+                              <div className="font-bold text-purple-600">{Math.round(result.resource_breakdown.other_kb || 0)} KB</div>
                             </div>
                           </div>
                         </div>
