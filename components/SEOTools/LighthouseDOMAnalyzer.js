@@ -125,18 +125,19 @@ export default function LighthouseDOMAnalyzer() {
       console.log('📦 Using total-byte-weight:', (totalSizeKB / 1024).toFixed(2) + ' MB');
     }
 
-    // METHOD 2: If total-byte-weight not available, use network requests
-    if (totalSizeKB === 0 && audits['network-requests'] && audits['network-requests'].details && audits['network-requests'].details.items) {
+    // METHOD 2: Always process network requests for breakdown
+    if (audits['network-requests'] && audits['network-requests'].details && audits['network-requests'].details.items) {
       const networkRequests = audits['network-requests'].details.items;
+      let networkTotal = 0;
       
       networkRequests.forEach(request => {
         const transferSize = safeExtractValue(request.transferSize);
         const resourceSize = safeExtractValue(request.resourceSize);
         
-        totalSizeKB += transferSize / 1024;
+        networkTotal += transferSize / 1024;
         
-        // Use resourceSize for breakdown (uncompressed is more accurate)
-        const sizeToUse = resourceSize > 0 ? resourceSize : transferSize;
+        // Use transferSize for breakdown (what actually transferred)
+        const sizeToUse = transferSize;
         
         // Categorize by resource type
         const url = request.url || '';
@@ -155,10 +156,16 @@ export default function LighthouseDOMAnalyzer() {
         }
       });
       
-      console.log('📦 Using network requests:', (totalSizeKB / 1024).toFixed(2) + ' MB');
+      // Use the higher of total-byte-weight or network total
+      if (networkTotal > totalSizeKB) {
+        totalSizeKB = networkTotal;
+      }
+      
+      console.log('📦 Network requests total:', (networkTotal / 1024).toFixed(2) + ' MB');
+      console.log('📦 Final page size:', (totalSizeKB / 1024).toFixed(2) + ' MB');
     }
 
-    // DOM complexity from dom-size audit - Limited data from PageSpeed API
+    // DOM complexity from dom-size audit - EXTRACT CORRECTLY
     let domNodes = 0;
     let domDepth = 0;
     let maxChildren = 0;
@@ -166,16 +173,18 @@ export default function LighthouseDOMAnalyzer() {
     if (audits['dom-size'] && audits['dom-size'].details && audits['dom-size'].details.items) {
       const domItems = audits['dom-size'].details.items;
       
-      // PageSpeed API may have limited DOM data
-      if (domItems[0]) {
-        domNodes = safeExtractValue(domItems[0]);
-      }
-      if (domItems[1]) {
-        domDepth = safeExtractValue(domItems[1]);
-      }
-      if (domItems[2]) {
-        maxChildren = safeExtractValue(domItems[2]);
-      }
+      // dom-size audit returns array with [nodeCount, depth, maxChildElements] structure
+      domItems.forEach(item => {
+        if (item.statistic === 'Total DOM Elements') {
+          domNodes = safeExtractValue(item.value);
+        } else if (item.statistic === 'Maximum DOM Depth') {
+          domDepth = safeExtractValue(item.value);
+        } else if (item.statistic === 'Maximum Child Elements') {
+          maxChildren = safeExtractValue(item.value);
+        }
+      });
+      
+      console.log('🏗️ DOM from PageSpeed:', {nodes: domNodes, depth: domDepth, children: maxChildren});
     }
 
     // Extract performance metrics for DOM analysis - SAFELY
@@ -244,7 +253,7 @@ export default function LighthouseDOMAnalyzer() {
     };
   };
 
-  // NEW: Hybrid analysis function - combines PageSpeed API + Lighthouse CLI
+  // NEW: Hybrid analysis function - combines PageSpeed API + Lighthouse CLI  
   const runHybridAnalysis = async (url) => {
     const fullUrl = ensureProtocol(url);
     
@@ -278,33 +287,69 @@ export default function LighthouseDOMAnalyzer() {
       const lighthouse = mobileData.lighthouseResult;
       const pagespeedDOMData = extractRealDOMDataFromPageSpeed(lighthouse);
       
-      // STEP 2: Get DOM data from Lighthouse CLI (slow but accurate)
+      console.log('📊 PageSpeed extracted data:', pagespeedDOMData);
+
+      // STEP 2: Get DOM data from Railway Lighthouse CLI (FORCED CALL)
       console.log('🔍 Step 2: Lighthouse CLI for REAL DOM data...');
       
-      let lighthouseDOMData = null;
-      let analysisMethod = 'HYBRID';
+      let railwayDOMData = null;
+      let analysisMethod = 'FALLBACK_PAGESPEED_ONLY';
       
       try {
+        console.log('🚀 Calling Railway endpoint:', {
+          url: fullUrl, 
+          apiKeyLength: apiKey.trim().length,
+          endpoint: '/api/lighthouse-dom'
+        });
+        
         const domResponse = await fetch('/api/lighthouse-dom', {
           method: 'POST',
           headers: {
-            'Content-Type': 'application/json'
+            'Content-Type': 'application/json',
+            'Accept': 'application/json'
           },
-          body: JSON.stringify({ url: fullUrl, apiKey: apiKey.trim() })
+          body: JSON.stringify({ 
+            url: fullUrl, 
+            apiKey: apiKey.trim() 
+          })
         });
         
-        const domResult = await domResponse.json();
+        console.log('🎯 Railway HTTP response:', {
+          status: domResponse.status,
+          statusText: domResponse.statusText,
+          ok: domResponse.ok,
+          headers: Object.fromEntries([...domResponse.headers.entries()])
+        });
         
-        if (domResult.success) {
-          lighthouseDOMData = domResult.domData;
-          console.log('✅ Lighthouse CLI data received:', lighthouseDOMData);
-        } else {
-          console.log('⚠️ Lighthouse CLI failed, using PageSpeed API only');
-          analysisMethod = 'FALLBACK_PAGESPEED_ONLY';
+        if (!domResponse.ok) {
+          const errorText = await domResponse.text();
+          console.error('❌ Railway HTTP error body:', errorText);
+          throw new Error(`Railway HTTP ${domResponse.status}: ${domResponse.statusText} - ${errorText}`);
         }
-      } catch (error) {
-        console.log('⚠️ Lighthouse CLI unavailable, using PageSpeed API only:', error.message);
-        analysisMethod = 'FALLBACK_PAGESPEED_ONLY';
+        
+        const domResult = await domResponse.json();
+        console.log('📦 Railway JSON response:', domResult);
+        
+        if (domResult.success && domResult.domData) {
+          railwayDOMData = domResult.domData;
+          analysisMethod = 'HYBRID';
+          console.log('✅ Railway DOM data SUCCESS:', {
+            nodes: railwayDOMData.dom_nodes,
+            depth: railwayDOMData.dom_depth, 
+            children: railwayDOMData.max_children,
+            score: railwayDOMData.crawlability_score,
+            risk: railwayDOMData.crawlability_risk
+          });
+        } else {
+          console.log('⚠️ Railway analysis failed:', domResult.error || 'No domData in response');
+        }
+      } catch (railwayError) {
+        console.error('❌ Railway complete error:', {
+          name: railwayError.name,
+          message: railwayError.message,
+          stack: railwayError.stack?.substring(0, 200)
+        });
+        console.log('⚠️ Using PageSpeed API only as fallback');
       }
       
       // Calculate GSC Impact Risk based on real performance
@@ -312,7 +357,7 @@ export default function LighthouseDOMAnalyzer() {
       const gscRisk = performanceScore < 0.5 ? 'HIGH' : 
                      performanceScore < 0.8 ? 'MEDIUM' : 'LOW';
 
-      // STEP 3: Merge PageSpeed + Lighthouse CLI data
+      // STEP 3: Merge Railway + PageSpeed data with PRIORITY to Railway
       const hybridResult = {
         url: fullUrl,
         performance_mobile: Math.round((safeExtractValue(mobileData.lighthouseResult?.categories?.performance?.score) || 0) * 100),
@@ -321,47 +366,61 @@ export default function LighthouseDOMAnalyzer() {
         best_practices: Math.round((safeExtractValue(mobileData.lighthouseResult?.categories?.['best-practices']?.score) || 0) * 100),
         seo: Math.round((safeExtractValue(mobileData.lighthouseResult?.categories?.seo?.score) || 0) * 100),
         
-        // DOM Data - Use Lighthouse CLI if available, otherwise PageSpeed API
-        dom_nodes: lighthouseDOMData ? lighthouseDOMData.dom_nodes : pagespeedDOMData.dom_nodes,
-        dom_depth: lighthouseDOMData ? lighthouseDOMData.dom_depth : pagespeedDOMData.dom_depth,
-        max_children: lighthouseDOMData ? lighthouseDOMData.max_children : pagespeedDOMData.max_children,
-        dom_errors: lighthouseDOMData ? lighthouseDOMData.dom_issues_count : pagespeedDOMData.dom_errors,
+        // DOM Data - RAILWAY FIRST, then PageSpeed fallback
+        dom_nodes: railwayDOMData ? railwayDOMData.dom_nodes : pagespeedDOMData.dom_nodes,
+        dom_depth: railwayDOMData ? railwayDOMData.dom_depth : pagespeedDOMData.dom_depth,
+        max_children: railwayDOMData ? railwayDOMData.max_children : pagespeedDOMData.max_children,
+        dom_errors: railwayDOMData ? railwayDOMData.dom_issues_count : pagespeedDOMData.dom_errors,
         
-        // Page size from PageSpeed API (works well)
+        // Page size ALWAYS from PageSpeed API (works well)
         page_size_mb: pagespeedDOMData.page_size_mb,
         
-        // Crawl impact - use Lighthouse CLI if available
-        crawl_impact: lighthouseDOMData ? lighthouseDOMData.crawlability_risk : pagespeedDOMData.crawl_impact,
+        // Crawl impact - Railway first
+        crawl_impact: railwayDOMData ? railwayDOMData.crawlability_risk : pagespeedDOMData.crawl_impact,
         gsc_risk: gscRisk,
         
-        // Critical issues - combine both sources
+        // Critical issues - combine sources
         critical_issues: [
           ...pagespeedDOMData.critical_issues,
-          ...(lighthouseDOMData ? lighthouseDOMData.dom_related_issues.map(issue => `${issue.audit}: ${issue.title}`) : [])
+          ...(railwayDOMData?.dom_related_issues?.map(issue => `${issue.audit}: ${issue.title}`) || [])
         ],
         
-        // Performance metrics
+        // Performance metrics from PageSpeed
         performance_metrics: pagespeedDOMData.performance_metrics,
         resource_breakdown: pagespeedDOMData.resource_breakdown,
         
-        // DOM analysis - enhanced if Lighthouse CLI available
+        // DOM analysis - enhanced if Railway available  
         dom_analysis: {
-          total_nodes: lighthouseDOMData ? lighthouseDOMData.dom_nodes : pagespeedDOMData.dom_nodes,
-          node_depth: lighthouseDOMData ? lighthouseDOMData.dom_depth : pagespeedDOMData.dom_depth,
-          max_children: lighthouseDOMData ? lighthouseDOMData.max_children : pagespeedDOMData.max_children,
-          crawlability_score: lighthouseDOMData ? lighthouseDOMData.crawlability_score : null,
-          critical_path_length: Math.ceil((lighthouseDOMData ? lighthouseDOMData.dom_depth : pagespeedDOMData.dom_depth) / 3)
+          total_nodes: railwayDOMData ? railwayDOMData.dom_nodes : pagespeedDOMData.dom_nodes,
+          node_depth: railwayDOMData ? railwayDOMData.dom_depth : pagespeedDOMData.dom_depth,
+          max_children: railwayDOMData ? railwayDOMData.max_children : pagespeedDOMData.max_children,
+          crawlability_score: railwayDOMData ? railwayDOMData.crawlability_score : null,
+          crawlability_penalties: railwayDOMData ? railwayDOMData.crawlability_penalties : [],
+          critical_path_length: Math.ceil((railwayDOMData ? railwayDOMData.dom_depth : pagespeedDOMData.dom_depth) / 3)
         },
         
         // Metadata
         analysis_method: analysisMethod,
-        lighthouse_version: lighthouseDOMData ? lighthouseDOMData.google_lighthouse_version : 'PageSpeed API only',
-        data_sources: lighthouseDOMData ? ['PageSpeed Insights API', 'Lighthouse CLI'] : ['PageSpeed Insights API'],
+        lighthouse_version: railwayDOMData ? railwayDOMData.google_lighthouse_version : 'PageSpeed API only',
+        data_sources: railwayDOMData ? 
+          ['PageSpeed Insights API (User Key)', 'Railway Lighthouse CLI'] : 
+          ['PageSpeed Insights API (User Key)'],
         
         status: 'success'
       };
 
       console.log('✅ HYBRID analysis complete:', hybridResult);
+      console.log('🔧 Final values check:', {
+        method: hybridResult.analysis_method,
+        nodes: hybridResult.dom_nodes,
+        children: hybridResult.max_children,
+        pageSize: hybridResult.page_size_mb,
+        resourceTotal: Object.values(hybridResult.resource_breakdown).reduce((a,b) => a+b, 0)
+      });
+      
+      // Store for debugging
+      window.lastAnalysisResult = hybridResult;
+      
       return hybridResult;
 
     } catch (error) {
