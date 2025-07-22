@@ -12,13 +12,199 @@ export default function LighthouseDOMAnalyzer() {
   const [isRunningCompetitors, setIsRunningCompetitors] = useState(false);
   const [progress, setProgress] = useState({ current: 0, total: 0 });
   const [showDetails, setShowDetails] = useState({});
-  const [showAuditDetails, setShowAuditDetails] = useState({});
-  const [showDeveloperInsights, setShowDeveloperInsights] = useState({});
   const [testStatus, setTestStatus] = useState('');
+
+  // 🔥 SEPARATE DATA STORAGE - HONEY POT APPROACH
+  const [pagespeedData, setPagespeedData] = useState(null);
+  const [railwayData, setRailwayData] = useState(null);
+  const [analysisStatus, setAnalysisStatus] = useState({
+    pagespeed: 'idle', // idle, loading, success, error
+    railway: 'idle',
+    combined: 'idle'
+  });
+
+  // 🔥 SEPARATE PAGESPEED DATA FETCH
+  const fetchPageSpeedData = async (url) => {
+    const fullUrl = ensureProtocol(url);
+    
+    try {
+      console.log('🚀 Fetching PageSpeed data for:', fullUrl);
+      setAnalysisStatus(prev => ({ ...prev, pagespeed: 'loading' }));
+      
+      // Mobile data
+      const mobileResponse = await fetch(
+        `https://www.googleapis.com/pagespeedonline/v5/runPagespeed?url=${encodeURIComponent(fullUrl)}&strategy=mobile&key=${encodeURIComponent(apiKey.trim())}&category=performance&category=seo&category=accessibility&category=best-practices`
+      );
+      const mobileData = await mobileResponse.json();
+      
+      if (mobileData.error) throw new Error(mobileData.error.message);
+      
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      
+      // Desktop data
+      const desktopResponse = await fetch(
+        `https://www.googleapis.com/pagespeedonline/v5/runPagespeed?url=${encodeURIComponent(fullUrl)}&strategy=desktop&key=${encodeURIComponent(apiKey.trim())}&category=performance&category=seo&category=accessibility&category=best-practices`
+      );
+      const desktopData = await desktopResponse.json();
+      
+      if (desktopData.error) throw new Error(desktopData.error.message);
+      
+      // Extract and store PageSpeed data
+      const extractedData = {
+        url: fullUrl,
+        performance_mobile: Math.round((safeExtractValue(mobileData.lighthouseResult?.categories?.performance?.score) || 0) * 100),
+        performance_desktop: Math.round((safeExtractValue(desktopData.lighthouseResult?.categories?.performance?.score) || 0) * 100),
+        accessibility: Math.round((safeExtractValue(mobileData.lighthouseResult?.categories?.accessibility?.score) || 0) * 100),
+        best_practices: Math.round((safeExtractValue(mobileData.lighthouseResult?.categories?.['best-practices']?.score) || 0) * 100),
+        seo: Math.round((safeExtractValue(mobileData.lighthouseResult?.categories?.seo?.score) || 0) * 100),
+        lighthouse_result: mobileData.lighthouseResult,
+        raw_data: extractRealDOMDataFromPageSpeed(mobileData.lighthouseResult),
+        timestamp: Date.now()
+      // 🔥 COMBINE DATA WHEN BOTH READY - HONEY POT APPROACH
+  React.useEffect(() => {
+    if (analysisStatus.pagespeed === 'success' && analysisStatus.railway === 'success' && pagespeedData && railwayData) {
+      console.log('🎯 COMBINING DATA - Both sources ready!');
+      
+      // Combine PageSpeed + Railway data
+      const combinedResult = {
+        url: pagespeedData.url,
+        
+        // Performance from PageSpeed  
+        performance_mobile: pagespeedData.performance_mobile,
+        performance_desktop: pagespeedData.performance_desktop,
+        accessibility: pagespeedData.accessibility,
+        best_practices: pagespeedData.best_practices,
+        seo: pagespeedData.seo,
+        
+        // DOM data prioritize Railway over PageSpeed
+        dom_nodes: railwayData.dom_nodes || pagespeedData.raw_data.dom_nodes,
+        dom_depth: railwayData.dom_depth || pagespeedData.raw_data.dom_depth,
+        max_children: railwayData.max_children || pagespeedData.raw_data.max_children,
+        dom_errors: (railwayData.dom_issues_count || 0) + (pagespeedData.raw_data.dom_errors || 0),
+        
+        // Page size from PageSpeed
+        page_size_mb: pagespeedData.raw_data.page_size_mb,
+        
+        // Resource breakdown from PageSpeed
+        resource_breakdown: pagespeedData.raw_data.resource_breakdown,
+        
+        // Performance metrics from PageSpeed
+        performance_metrics: pagespeedData.raw_data.performance_metrics,
+        
+        // Crawl impact from Railway or PageSpeed
+        crawl_impact: railwayData.crawlability_risk || pagespeedData.raw_data.crawl_impact,
+        
+        // Analysis metadata
+        analysis_method: 'HYBRID',
+        data_sources: ['PageSpeed Insights API', 'Railway Lighthouse CLI'],
+        lighthouse_version: railwayData.google_lighthouse_version || 'Unknown',
+        
+        // Combined critical issues
+        critical_issues: [
+          ...pagespeedData.raw_data.critical_issues,
+          ...(railwayData.dom_related_issues?.map(issue => `${issue.audit}: ${issue.title}`) || [])
+        ],
+        
+        status: 'success'
+      };
+      
+      console.log('🎉 FINAL COMBINED RESULT:', combinedResult);
+      console.log('🔧 Values check:', {
+        maxChildren: combinedResult.max_children,
+        domNodes: combinedResult.dom_nodes,  
+        pageSize: combinedResult.page_size_mb,
+        resourceTotal: Object.values(combinedResult.resource_breakdown).reduce((a,b) => a+b, 0)
+      });
+      
+      // Store in results and debug
+      setResults([combinedResult]);
+      window.lastCombinedResult = combinedResult;
+      window.lastPageSpeedData = pagespeedData;
+      window.lastRailwayData = railwayData;
+      
+      setAnalysisStatus(prev => ({ ...prev, combined: 'success' }));
+      setIsRunning(false);
+      
+    } else if (analysisStatus.pagespeed === 'success' && analysisStatus.railway === 'error' && pagespeedData) {
+      console.log('⚠️ FALLBACK - Using PageSpeed data only');
+      
+      const fallbackResult = {
+        url: pagespeedData.url,
+        performance_mobile: pagespeedData.performance_mobile,
+        performance_desktop: pagespeedData.performance_desktop,
+        accessibility: pagespeedData.accessibility,
+        best_practices: pagespeedData.best_practices,
+        seo: pagespeedData.seo,
+        
+        // DOM data from PageSpeed only
+        dom_nodes: pagespeedData.raw_data.dom_nodes,
+        dom_depth: pagespeedData.raw_data.dom_depth,
+        max_children: pagespeedData.raw_data.max_children,
+        dom_errors: pagespeedData.raw_data.dom_errors,
+        page_size_mb: pagespeedData.raw_data.page_size_mb,
+        resource_breakdown: pagespeedData.raw_data.resource_breakdown,
+        performance_metrics: pagespeedData.raw_data.performance_metrics,
+        crawl_impact: pagespeedData.raw_data.crawl_impact,
+        critical_issues: pagespeedData.raw_data.critical_issues,
+        
+        analysis_method: 'FALLBACK_PAGESPEED_ONLY',
+        data_sources: ['PageSpeed Insights API'],
+        status: 'success'
+      };
+      
+      console.log('📄 FALLBACK RESULT:', fallbackResult);
+      setResults([fallbackResult]);
+      setAnalysisStatus(prev => ({ ...prev, combined: 'success' }));
+      setIsRunning(false);
+    }
+  }, [analysisStatus, pagespeedData, railwayData]);
 
   // Check if API key is ready
   const isApiKeyReady = () => {
     return apiKey && apiKey.trim().length > 0;
+  };
+      
+      console.log('✅ PageSpeed data extracted:', extractedData);
+      setPagespeedData(extractedData);
+      setAnalysisStatus(prev => ({ ...prev, pagespeed: 'success' }));
+      
+    } catch (error) {
+      console.error('❌ PageSpeed error:', error);
+      setAnalysisStatus(prev => ({ ...prev, pagespeed: 'error' }));
+      setPagespeedData({ error: error.message, url: fullUrl });
+    }
+  };
+
+  // 🔥 SEPARATE RAILWAY DATA FETCH  
+  const fetchRailwayData = async (url) => {
+    const fullUrl = ensureProtocol(url);
+    
+    try {
+      console.log('🚀 Fetching Railway data for:', fullUrl);
+      setAnalysisStatus(prev => ({ ...prev, railway: 'loading' }));
+      
+      const railwayResponse = await fetch('/api/lighthouse-dom', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: fullUrl })
+      });
+      
+      const railwayResult = await railwayResponse.json();
+      console.log('📦 Railway response:', railwayResult);
+      
+      if (railwayResult.success && railwayResult.domData) {
+        console.log('✅ Railway data extracted:', railwayResult.domData);
+        setRailwayData(railwayResult.domData);
+        setAnalysisStatus(prev => ({ ...prev, railway: 'success' }));
+      } else {
+        throw new Error(railwayResult.error || 'No Railway data');
+      }
+      
+    } catch (error) {
+      console.error('❌ Railway error:', error);
+      setAnalysisStatus(prev => ({ ...prev, railway: 'error' }));
+      setRailwayData({ error: error.message, url: fullUrl });
+    }
   };
 
   // Test API key function
@@ -33,13 +219,15 @@ export default function LighthouseDOMAnalyzer() {
     
     try {
       console.log('🧪 Testing API key:', apiKey.substring(0, 10) + '...');
+      console.log('🧪 Full key length:', apiKey.trim().length);
       
       const testResponse = await fetch(
-        `https://www.googleapis.com/pagespeedonline/v5/runPagespeed?url=https://www.google.com&strategy=mobile&key=${apiKey.trim()}`
+        `https://www.googleapis.com/pagespeedonline/v5/runPagespeed?url=${encodeURIComponent('https://www.google.com')}&strategy=mobile&key=${encodeURIComponent(apiKey.trim())}`
       );
       
-      const testData = await testResponse.json();
+      console.log('🔍 API Test Response status:', testResponse.status);
       
+      const testData = await testResponse.json();
       console.log('🔍 API Test Response:', testData);
       
       if (testData.error) {
@@ -91,7 +279,6 @@ export default function LighthouseDOMAnalyzer() {
     if (typeof apiObject === 'number') return apiObject;
     if (typeof apiObject === 'string') return parseFloat(apiObject) || 0;
     if (apiObject && typeof apiObject === 'object') {
-      // Handle Google API objects with granularity, type, value structure
       if ('value' in apiObject) return typeof apiObject.value === 'number' ? apiObject.value : 0;
       if ('numericValue' in apiObject) return typeof apiObject.numericValue === 'number' ? apiObject.numericValue : 0;
     }
@@ -107,7 +294,7 @@ export default function LighthouseDOMAnalyzer() {
   };
 
   // Extract real DOM data from Lighthouse API response - FIXED FOR REACT ERROR #31
-  const extractRealDOMData = (lighthouseResult) => {
+  const extractRealDOMDataFromPageSpeed = (lighthouseResult) => {
     const audits = lighthouseResult.audits;
     
     // Extract real page size using MULTIPLE methods for accuracy
@@ -126,60 +313,75 @@ export default function LighthouseDOMAnalyzer() {
       console.log('📦 Using total-byte-weight:', (totalSizeKB / 1024).toFixed(2) + ' MB');
     }
 
-    // METHOD 2: If total-byte-weight not available, use network requests
-    if (totalSizeKB === 0 && audits['network-requests'] && audits['network-requests'].details && audits['network-requests'].details.items) {
+    // METHOD 2: Always process network requests for breakdown AND better size calculation
+    if (audits['network-requests'] && audits['network-requests'].details && audits['network-requests'].details.items) {
       const networkRequests = audits['network-requests'].details.items;
-      
-      // Try both transferSize (compressed) AND resourceSize (uncompressed)
+      let networkTotal = 0;
       let transferTotal = 0;
-      let resourceTotal = 0;
       
-      networkRequests.forEach(request => {
-        const transferSize = safeExtractValue(request.transferSize);
-        const resourceSize = safeExtractValue(request.resourceSize);
+      console.log('🌐 Processing', networkRequests.length, 'network requests');
+      
+      networkRequests.forEach((request, index) => {
+        const transferSize = safeExtractValue(request.transferSize || 0);
+        const resourceSize = safeExtractValue(request.resourceSize || 0);
         
-        transferTotal += transferSize / 1024;
-        resourceTotal += resourceSize / 1024;
+        networkTotal += resourceSize; // Uncompressed size
+        transferTotal += transferSize; // Compressed/transferred size
         
-        // Use resourceSize for breakdown (uncompressed is more accurate)
-        const sizeToUse = resourceSize > 0 ? resourceSize : transferSize;
+        // Use transferSize for breakdown (actual bytes transferred)
+        const sizeToUse = transferSize;
         
         // Categorize by resource type
         const url = request.url || '';
         const mimeType = request.mimeType || '';
         
-        if (mimeType.includes('text/html') || url.includes('.html')) {
+        if (mimeType.includes('text/html') || mimeType.includes('html') || url.includes('.html')) {
           resourceBreakdown.html_kb += sizeToUse / 1024;
-        } else if (mimeType.includes('text/css') || url.includes('.css')) {
+        } else if (mimeType.includes('text/css') || mimeType.includes('css') || url.includes('.css')) {
           resourceBreakdown.css_kb += sizeToUse / 1024;
-        } else if (mimeType.includes('javascript') || url.includes('.js')) {
+        } else if (mimeType.includes('javascript') || mimeType.includes('js') || url.includes('.js')) {
           resourceBreakdown.js_kb += sizeToUse / 1024;
-        } else if (mimeType.includes('image/') || url.match(/\.(png|jpg|jpeg|gif|webp|svg)$/)) {
+        } else if (mimeType.includes('image/') || url.match(/\.(png|jpg|jpeg|gif|webp|svg|ico)$/i)) {
           resourceBreakdown.images_kb += sizeToUse / 1024;
         } else {
           resourceBreakdown.other_kb += sizeToUse / 1024;
         }
-      });
-      
-      // Use the larger of transferSize or resourceSize (more accurate)
-      totalSizeKB = Math.max(transferTotal, resourceTotal);
-      console.log('📦 Network requests - Transfer:', (transferTotal / 1024).toFixed(2) + ' MB');
-      console.log('📦 Network requests - Resource:', (resourceTotal / 1024).toFixed(2) + ' MB');
-      console.log('📦 Using larger value:', (totalSizeKB / 1024).toFixed(2) + ' MB');
-    }
-
-    // METHOD 3: Fallback to resource-summary if available
-    if (totalSizeKB === 0 && audits['resource-summary'] && audits['resource-summary'].details && audits['resource-summary'].details.items) {
-      const resourceSummary = audits['resource-summary'].details.items;
-      resourceSummary.forEach(item => {
-        if (item.transferSize) {
-          totalSizeKB += safeExtractValue(item.transferSize) / 1024;
+        
+        // Debug first few requests
+        if (index < 3) {
+          console.log(`📄 Request ${index}:`, {
+            url: url.substring(0, 50) + '...',
+            mimeType,
+            transferSize: Math.round(transferSize / 1024) + ' KB',
+            resourceSize: Math.round(resourceSize / 1024) + ' KB'
+          });
         }
       });
-      console.log('📦 Using resource-summary:', (totalSizeKB / 1024).toFixed(2) + ' MB');
+      
+      // Use the higher of total-byte-weight or network total
+      const networkTotalKB = Math.max(transferTotal, networkTotal) / 1024;
+      if (networkTotalKB > totalSizeKB) {
+        totalSizeKB = networkTotalKB;
+      }
+      
+      console.log('📦 Size calculations:', {
+        totalByteWeight: (totalSizeKB * 1024 / 1024).toFixed(2) + ' MB',
+        networkTransfer: (transferTotal / 1024 / 1024).toFixed(2) + ' MB',
+        networkResource: (networkTotal / 1024 / 1024).toFixed(2) + ' MB',
+        finalSize: (totalSizeKB / 1024).toFixed(2) + ' MB'
+      });
+      
+      console.log('📊 Resource breakdown:', {
+        html: Math.round(resourceBreakdown.html_kb) + ' KB',
+        css: Math.round(resourceBreakdown.css_kb) + ' KB', 
+        js: Math.round(resourceBreakdown.js_kb) + ' KB',
+        images: Math.round(resourceBreakdown.images_kb) + ' KB',
+        other: Math.round(resourceBreakdown.other_kb) + ' KB',
+        total: Math.round(Object.values(resourceBreakdown).reduce((a,b) => a+b, 0)) + ' KB'
+      });
     }
 
-    // Extract DOM complexity from dom-size audit - FIXED TO PREVENT REACT ERROR
+    // DOM complexity from dom-size audit - EXTRACT CORRECTLY
     let domNodes = 0;
     let domDepth = 0;
     let maxChildren = 0;
@@ -187,16 +389,60 @@ export default function LighthouseDOMAnalyzer() {
     if (audits['dom-size'] && audits['dom-size'].details && audits['dom-size'].details.items) {
       const domItems = audits['dom-size'].details.items;
       
-      // Safely extract DOM data with proper object handling
-      if (domItems[0]) {
-        domNodes = safeExtractValue(domItems[0]); // This fixes the React error!
+      console.log('🏗️ Raw DOM size audit data:', domItems);
+      
+      // Try multiple parsing methods - PageSpeed API structure varies
+      if (Array.isArray(domItems) && domItems.length >= 3) {
+        // Method 1: Direct array access
+        const item1 = domItems[0];
+        const item2 = domItems[1]; 
+        const item3 = domItems[2];
+        
+        // Check if items have 'value' property
+        if (item1 && typeof item1.value !== 'undefined') {
+          domNodes = safeExtractValue(item1.value);
+        }
+        if (item2 && typeof item2.value !== 'undefined') {
+          domDepth = safeExtractValue(item2.value);
+        }
+        if (item3 && typeof item3.value !== 'undefined') {
+          maxChildren = safeExtractValue(item3.value);
+        }
+        
+        // If that didn't work, try numericValue
+        if (domNodes === 0 && item1?.numericValue) {
+          domNodes = safeExtractValue(item1.numericValue);
+        }
+        if (domDepth === 0 && item2?.numericValue) {
+          domDepth = safeExtractValue(item2.numericValue);
+        }
+        if (maxChildren === 0 && item3?.numericValue) {
+          maxChildren = safeExtractValue(item3.numericValue);
+        }
       }
-      if (domItems[1]) {
-        domDepth = safeExtractValue(domItems[1]);
-      }
-      if (domItems[2]) {
-        maxChildren = safeExtractValue(domItems[2]);
-      }
+      
+      // Method 2: Search by statistic name if available
+      domItems.forEach(item => {
+        if (item.statistic === 'Total DOM Elements' || item.statistic === 'Element count') {
+          domNodes = safeExtractValue(item.value || item.numericValue);
+        } else if (item.statistic === 'Maximum DOM Depth' || item.statistic === 'DOM depth') {
+          domDepth = safeExtractValue(item.value || item.numericValue);
+        } else if (item.statistic === 'Maximum Child Elements' || item.statistic === 'Child elements') {
+          maxChildren = safeExtractValue(item.value || item.numericValue);
+        }
+      });
+      
+      console.log('🏗️ DOM extracted from PageSpeed:', {
+        nodes: domNodes,
+        depth: domDepth, 
+        children: maxChildren
+      });
+    }
+    
+    // If PageSpeed DOM extraction failed, try alternative method
+    if (domNodes === 0 && audits['dom-size']?.numericValue) {
+      domNodes = safeExtractValue(audits['dom-size'].numericValue);
+      console.log('🏗️ Using dom-size numericValue as fallback:', domNodes);
     }
 
     // Extract performance metrics for DOM analysis - SAFELY
@@ -239,13 +485,13 @@ export default function LighthouseDOMAnalyzer() {
     }
 
     // Return clean, React-safe object with only primitive values
-    return {
+    const finalResult = {
       page_size_mb: Math.round(pageSizeMB * 100) / 100,
       dom_nodes: Math.round(domNodes) || 0,
       dom_depth: Math.round(domDepth) || 0,
       max_children: Math.round(maxChildren) || 0,
       dom_errors: Math.round(domErrors) || 0,
-      critical_issues: criticalIssues.filter(issue => typeof issue === 'string'), // Ensure string array
+      critical_issues: criticalIssues.filter(issue => typeof issue === 'string'),
       crawl_impact: crawlImpact,
       performance_metrics: {
         fcp: Math.round(performanceMetrics.fcp) || 0,
@@ -260,98 +506,38 @@ export default function LighthouseDOMAnalyzer() {
         js_kb: Math.round(resourceBreakdown.js_kb) || 0,
         images_kb: Math.round(resourceBreakdown.images_kb) || 0,
         other_kb: Math.round(resourceBreakdown.other_kb) || 0
-      }
+      },
+      data_source: 'PageSpeed API'
     };
-  };
-
-  // Run PageSpeed Insights API call with REAL DOM Analysis - REACT ERROR FIXED
-  const runPageSpeedInsights = async (url) => {
-    const fullUrl = ensureProtocol(url);
     
-    try {
-      console.log('🚀 Testing URL:', fullUrl);
-      console.log('🔑 Using API key:', apiKey.substring(0, 10) + '...');
-      
-      const mobileResponse = await fetch(
-        `https://www.googleapis.com/pagespeedonline/v5/runPagespeed?url=${encodeURIComponent(fullUrl)}&strategy=mobile&key=${apiKey.trim()}&category=performance&category=seo&category=accessibility&category=best-practices`
-      );
-      const mobileData = await mobileResponse.json();
-      
-      console.log('📱 Mobile API Response:', mobileData);
-
-      if (mobileData.error) {
-        console.error('❌ Mobile API Error:', mobileData.error);
-        throw new Error(`${mobileData.error.message} (${mobileData.error.code || 'Unknown'})`);
-      }
-
-      await new Promise(resolve => setTimeout(resolve, 3000)); // Rate limiting
-
-      const desktopResponse = await fetch(
-        `https://www.googleapis.com/pagespeedonline/v5/runPagespeed?url=${encodeURIComponent(fullUrl)}&strategy=desktop&key=${apiKey.trim()}&category=performance&category=seo&category=accessibility&category=best-practices`
-      );
-      const desktopData = await desktopResponse.json();
-      
-      console.log('🖥️ Desktop API Response:', desktopData);
-
-      if (desktopData.error) {
-        console.error('❌ Desktop API Error:', desktopData.error);
-        throw new Error(`${desktopData.error.message} (${desktopData.error.code || 'Unknown'})`);
-      }
-
-      // Extract REAL DOM data from mobile lighthouse result - NOW REACT-SAFE!
-      const lighthouse = mobileData.lighthouseResult;
-      const realDOMData = extractRealDOMData(lighthouse);
-
-      // Calculate GSC Impact Risk based on real performance - SAFELY
-      const performanceScore = safeExtractValue(lighthouse.categories?.performance?.score);
-      const gscRisk = performanceScore < 0.5 ? 'HIGH' : 
-                     performanceScore < 0.8 ? 'MEDIUM' : 'LOW';
-
-      // Return clean, React-safe result object with only primitive values
-      const result = {
-        url: fullUrl,
-        performance_mobile: Math.round((safeExtractValue(mobileData.lighthouseResult?.categories?.performance?.score) || 0) * 100),
-        performance_desktop: Math.round((safeExtractValue(desktopData.lighthouseResult?.categories?.performance?.score) || 0) * 100),
-        accessibility: Math.round((safeExtractValue(mobileData.lighthouseResult?.categories?.accessibility?.score) || 0) * 100),
-        best_practices: Math.round((safeExtractValue(mobileData.lighthouseResult?.categories?.['best-practices']?.score) || 0) * 100),
-        seo: Math.round((safeExtractValue(mobileData.lighthouseResult?.categories?.seo?.score) || 0) * 100),
-        
-        // REAL DOM Analysis metrics (NOW REACT-SAFE - NO MORE COMPLEX OBJECTS!)
-        page_size_mb: realDOMData.page_size_mb,
-        dom_nodes: realDOMData.dom_nodes,
-        dom_depth: realDOMData.dom_depth,
-        max_children: realDOMData.max_children,
-        dom_errors: realDOMData.dom_errors,
-        crawl_impact: realDOMData.crawl_impact,
-        gsc_risk: gscRisk,
-        critical_issues: realDOMData.critical_issues,
-        performance_metrics: realDOMData.performance_metrics,
-        resource_breakdown: realDOMData.resource_breakdown,
-        
-        // Additional analysis - REACT-SAFE
-        dom_analysis: {
-          total_nodes: realDOMData.dom_nodes,
-          node_depth: realDOMData.dom_depth,
-          max_children: realDOMData.max_children,
-          critical_path_length: Math.ceil((realDOMData.dom_depth || 0) / 3)
-        },
-        status: 'success'
-      };
-
-      console.log('✅ REAL DOM analysis result (React-safe):', result);
-      return result;
-
-    } catch (error) {
-      console.error('🚨 DOM Analysis Error:', error);
-      return {
-        url: fullUrl,
-        error: String(error.message || 'Unknown error'), // Ensure string
-        status: 'error'
-      };
-    }
+    console.log('🔧 Final PageSpeed extraction result:', finalResult);
+    
+    return finalResult;
   };
 
-  // Run single URL test
+  // 🔥 NEW HONEY POT ANALYSIS - PARALLEL DATA FETCHING
+  const runAnalysis = async (url) => {
+    if (!url?.trim()) return;
+    
+    console.log('🎯 Starting HONEY POT analysis for:', url);
+    
+    // Reset state
+    setPagespeedData(null);
+    setRailwayData(null); 
+    setAnalysisStatus({ pagespeed: 'idle', railway: 'idle', combined: 'idle' });
+    setResults([]);
+    
+    // Start both processes in parallel
+    console.log('🔄 Starting PARALLEL data fetching...');
+    
+    // Don't await - let them run in parallel
+    fetchPageSpeedData(url);
+    fetchRailwayData(url);
+    
+    console.log('✅ Both data fetchers started - waiting for completion...');
+  };
+
+  // Run single URL test - UPDATED to use honey pot
   const runSingleTest = async () => {
     if (!singleUrl.trim()) {
       alert('❌ Please enter a URL to test');
@@ -364,22 +550,12 @@ export default function LighthouseDOMAnalyzer() {
     }
     
     setIsRunning(true);
-    setProgress({ current: 0, total: 1 });
-    setResults([]);
-
-    try {
-      setProgress({ current: 1, total: 1 });
-      const result = await runPageSpeedInsights(singleUrl.trim());
-      setResults([result]);
-    } catch (error) {
-      console.error('Single test error:', error);
-      setResults([{ url: ensureProtocol(singleUrl.trim()), error: String(error.message), status: 'error' }]);
-    } finally {
-      setIsRunning(false);
-    }
+    setProgress({ current: 1, total: 1 });
+    
+    await runAnalysis(singleUrl.trim());
   };
 
-  // Run batch URL tests
+  // Run batch URL tests - UPDATED to use hybrid analysis
   const runBatchTest = async () => {
     const urls = batchUrls.split('\n').filter(url => url.trim());
     if (urls.length === 0) {
@@ -402,7 +578,7 @@ export default function LighthouseDOMAnalyzer() {
       if (url) {
         try {
           setProgress({ current: i + 1, total: urls.length });
-          const result = await runPageSpeedInsights(url);
+          const result = await runHybridAnalysis(url);
           batchResults.push(result);
           setResults([...batchResults]);
           
@@ -419,7 +595,7 @@ export default function LighthouseDOMAnalyzer() {
     setIsRunning(false);
   };
 
-  // Run competitor analysis
+  // Run competitor analysis - UPDATED to use hybrid analysis
   const runCompetitorAnalysis = async () => {
     const urls = competitorUrls.split('\n').filter(url => url.trim());
     if (urls.length === 0) {
@@ -442,7 +618,7 @@ export default function LighthouseDOMAnalyzer() {
       if (url) {
         try {
           setProgress({ current: i + 1, total: urls.length });
-          const result = await runPageSpeedInsights(url);
+          const result = await runHybridAnalysis(url);
           compResults.push(result);
           setCompetitorResults([...compResults]);
           
@@ -618,6 +794,7 @@ export default function LighthouseDOMAnalyzer() {
                   <th className="px-4 py-3 text-center font-bold">🖥️ Desktop<br/>Perf</th>
                   <th className="px-4 py-3 text-center font-bold">🏆 Crawl<br/>Score</th>
                   <th className="px-4 py-3 text-center font-bold">🔍 Verify</th>
+                  <th className="px-4 py-3 text-center font-bold">📊 Data<br/>Source</th>
                 </tr>
               </thead>
               <tbody>
@@ -699,8 +876,11 @@ export default function LighthouseDOMAnalyzer() {
                           domNodes <= 1200 ? 'text-green-600' :
                           domNodes <= 1800 ? 'text-yellow-600' : 'text-red-600'
                         }`}>
-                          {domNodes.toLocaleString()}
+                          {domNodes === 0 ? 'N/A' : domNodes.toLocaleString()}
                         </div>
+                        {domNodes === 0 && (
+                          <div className="text-xs text-orange-500">Limited API</div>
+                        )}
                       </td>
                       
                       {/* DOM Depth */}
@@ -709,8 +889,11 @@ export default function LighthouseDOMAnalyzer() {
                           domDepth <= 25 ? 'text-green-600' :
                           domDepth <= 32 ? 'text-yellow-600' : 'text-red-600'
                         }`}>
-                          {domDepth}
+                          {domDepth === 0 ? 'N/A' : domDepth}
                         </div>
+                        {domDepth === 0 && (
+                          <div className="text-xs text-orange-500">Limited API</div>
+                        )}
                       </td>
                       
                       {/* Mobile Performance */}
@@ -753,6 +936,18 @@ export default function LighthouseDOMAnalyzer() {
                           <ExternalLink size={14} />
                           Check
                         </button>
+                      </td>
+                      
+                      {/* Data Source */}
+                      <td className="px-4 py-4 text-center">
+                        <div className={`text-xs px-2 py-1 rounded font-bold ${
+                          site.analysis_method === 'HYBRID' ? 'bg-green-100 text-green-700' :
+                          site.analysis_method === 'FALLBACK_PAGESPEED_ONLY' ? 'bg-orange-100 text-orange-700' :
+                          'bg-gray-100 text-gray-700'
+                        }`}>
+                          {site.analysis_method === 'HYBRID' ? '🔥 HYBRID' :
+                           site.analysis_method === 'FALLBACK_PAGESPEED_ONLY' ? '⚠️ API' : 'API'}
+                        </div>
                       </td>
                     </tr>
                   );
@@ -834,13 +1029,16 @@ export default function LighthouseDOMAnalyzer() {
                 <div className="flex justify-between">
                   <span>Your site:</span>
                   <span className={`font-bold ${Math.round(your_site.max_children || 0) <= 60 ? 'text-green-600' : 'text-red-600'}`}>
-                    {Math.round(your_site.max_children || 0)} max
+                    {Math.round(your_site.max_children || 0) === 0 ? 'N/A' : Math.round(your_site.max_children || 0) + ' max'}
                   </span>
                 </div>
                 <div className="flex justify-between">
                   <span>Best competitor:</span>
                   <span className="font-bold text-green-600">
-                    {Math.min(...competitorResults.filter(c => c.status === 'success').map(c => Math.round(c.max_children || 0)))} max
+                    {(() => {
+                      const min = Math.min(...competitorResults.filter(c => c.status === 'success').map(c => Math.round(c.max_children || 0)));
+                      return min === 0 ? 'N/A' : min + ' max';
+                    })()}
                   </span>
                 </div>
                 <div className="text-xs text-gray-600 mt-2">
@@ -871,24 +1069,25 @@ export default function LighthouseDOMAnalyzer() {
     <div className="max-w-7xl mx-auto p-6 bg-white">
       <div className="mb-8">
         <h1 className="text-4xl font-bold text-gray-900 mb-4">
-          🔍 Real-Time Lighthouse DOM Analyzer & Competitor Benchmark
+          🔥 HYBRID Lighthouse DOM Analyzer & Competitor Benchmark
         </h1>
         <p className="text-gray-600 text-lg">
-          Live Google PageSpeed Insights API analysis focusing on DOM crawlability, child elements monitoring, and competitive intelligence. 
-          NO FAKE DATA - All metrics are extracted directly from Google's real-time analysis.
+          Revolutionary hybrid approach: Fast PageSpeed Insights API + Accurate Lighthouse CLI for REAL DOM data. 
+          NO FAKE DATA - Performance scores from API, DOM structure from CLI.
         </p>
         
         <div className="mt-4 bg-green-50 border-2 border-green-300 rounded-lg p-4">
           <div className="flex items-center gap-2 mb-2">
-            <div className="text-green-600 text-xl">✅</div>
-            <strong className="text-green-900">100% REAL DATA GUARANTEE:</strong>
+            <div className="text-green-600 text-xl">🔥</div>
+            <strong className="text-green-900">HYBRID ANALYSIS FEATURES:</strong>
           </div>
           <div className="text-sm text-green-800 space-y-1">
-            <div>• DOM Nodes, Depth & Children extracted from Google's dom-size audit</div>
-            <div>• Page Size calculated from actual network-requests data</div>
-            <div>• DOM Errors based on real Lighthouse audit failures</div>
-            <div>• Performance scores directly from Google PageSpeed API</div>
-            <div>• Verify links provided for every site tested</div>
+            <div>• 🚀 <strong>Fast Performance Scores:</strong> PageSpeed Insights API (5-10 seconds)</div>
+            <div>• 🏗️ <strong>REAL DOM Data:</strong> Lighthouse CLI execution (15-30 seconds)</div>
+            <div>• 📊 <strong>Accurate Metrics:</strong> True nodes, depth & children counts</div>
+            <div>• 🔄 <strong>Fallback Protection:</strong> Works even if CLI fails</div>
+            <div>• 🎯 <strong>Google Thresholds:</strong> Official crawlability scoring</div>
+            <div>• 🔍 <strong>Data Source Tags:</strong> See which method provided each metric</div>
           </div>
         </div>
       </div>
@@ -944,58 +1143,99 @@ export default function LighthouseDOMAnalyzer() {
             className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2"
           >
             <Zap size={20} />
-            {isRunning ? 'Analyzing...' : 'Analyze Site'}
+            {isRunning ? 'Analyzing...' : 'Hybrid Analysis'}
           </button>
         </div>
         <div className="text-sm text-gray-600">
-          💡 Test your main site first, then add competitors below for the full comparison
+          🔥 Hybrid analysis: Fast API performance + Accurate CLI DOM data (15-30 seconds total)
         </div>
       </div>
 
-      {/* Competitor Analysis */}
-      <div className="bg-orange-50 rounded-lg p-6 mb-8">
+      {/* Competitor Analysis - TEMPORARILY DISABLED */}
+      <div className="bg-orange-50 rounded-lg p-6 mb-8 opacity-50">
         <h2 className="text-xl font-semibold mb-4">🥊 Competitor Analysis</h2>
         <p className="text-sm text-gray-600 mb-4">
-          Add competitor URLs to see how your DOM quality, page size, and crawlability compares
+          Competitor analysis temporarily disabled while we perfect the Honey Pot architecture. Coming back soon!
         </p>
-        <div className="mb-4">
-          <textarea
-            value={competitorUrls}
-            onChange={(e) => setCompetitorUrls(e.target.value)}
-            placeholder="competitor1.com&#10;competitor2.com&#10;competitor3.com"
-            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 h-24"
-          />
-        </div>
         <button
-          onClick={runCompetitorAnalysis}
-          disabled={isRunningCompetitors || !isApiKeyReady() || results.length === 0}
-          className="px-6 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 disabled:opacity-50 flex items-center gap-2"
+          disabled
+          className="px-6 py-2 bg-gray-400 text-white rounded-lg cursor-not-allowed"
         >
-          <Zap size={20} />
-          {isRunningCompetitors ? 'Analyzing Competitors...' : 'Analyze Competitors'}
+          Coming Soon
         </button>
-        {results.length === 0 && (
-          <div className="mt-2 text-sm text-orange-600">
-            ⚠️ Test your main site first, then add competitors for the full benchmark
-          </div>
-        )}
       </div>
 
-      {/* Progress */}
-      {(isRunning || isRunningCompetitors) && (
+      {/* Progress with Data Source Status */}
+      {isRunning && (
         <div className="mb-8">
           <div className="flex justify-between items-center mb-2">
-            <span className="text-sm text-gray-600">
-              {isRunningCompetitors ? 'Analyzing Competitors' : 'Progress'}
-            </span>
+            <span className="text-sm text-gray-600">Analysis Progress</span>
             <span className="text-sm text-gray-600">{progress.current} / {progress.total}</span>
           </div>
-          <div className="w-full bg-gray-200 rounded-full h-2">
+          
+          <div className="space-y-3">
+            {/* PageSpeed Status */}
+            <div className="flex items-center gap-3">
+              <div className={`w-4 h-4 rounded-full ${
+                analysisStatus.pagespeed === 'loading' ? 'bg-blue-500 animate-pulse' :
+                analysisStatus.pagespeed === 'success' ? 'bg-green-500' :
+                analysisStatus.pagespeed === 'error' ? 'bg-red-500' : 'bg-gray-300'
+              }`}></div>
+              <span className="text-sm">
+                📱 PageSpeed API: {
+                  analysisStatus.pagespeed === 'idle' ? 'Waiting...' :
+                  analysisStatus.pagespeed === 'loading' ? 'Fetching performance data...' :
+                  analysisStatus.pagespeed === 'success' ? 'Complete ✅' :
+                  'Failed ❌'
+                }
+              </span>
+            </div>
+            
+            {/* Railway Status */}
+            <div className="flex items-center gap-3">
+              <div className={`w-4 h-4 rounded-full ${
+                analysisStatus.railway === 'loading' ? 'bg-orange-500 animate-pulse' :
+                analysisStatus.railway === 'success' ? 'bg-green-500' :
+                analysisStatus.railway === 'error' ? 'bg-red-500' : 'bg-gray-300'
+              }`}></div>
+              <span className="text-sm">
+                🚂 Railway DOM: {
+                  analysisStatus.railway === 'idle' ? 'Waiting...' :
+                  analysisStatus.railway === 'loading' ? 'Running Lighthouse CLI...' :
+                  analysisStatus.railway === 'success' ? 'Complete ✅' :
+                  'Failed (using PageSpeed fallback) ⚠️'
+                }
+              </span>
+            </div>
+            
+            {/* Combined Status */}
+            <div className="flex items-center gap-3">
+              <div className={`w-4 h-4 rounded-full ${
+                analysisStatus.combined === 'success' ? 'bg-green-500' :
+                (analysisStatus.pagespeed === 'success' && analysisStatus.railway !== 'idle') ? 'bg-blue-500 animate-pulse' :
+                'bg-gray-300'
+              }`}></div>
+              <span className="text-sm">
+                🎯 Combining Data: {
+                  analysisStatus.combined === 'success' ? 'Complete ✅' :
+                  (analysisStatus.pagespeed === 'success' || analysisStatus.railway === 'success') ? 'Processing...' :
+                  'Waiting for data sources...'
+                }
+              </span>
+            </div>
+          </div>
+          
+          <div className="w-full bg-gray-200 rounded-full h-2 mt-4">
             <div
-              className={`h-2 rounded-full transition-all duration-300 ${
-                isRunningCompetitors ? 'bg-orange-600' : 'bg-blue-600'
-              }`}
-              style={{ width: `${(progress.current / progress.total) * 100}%` }}
+              className="h-2 rounded-full transition-all duration-300 bg-blue-600"
+              style={{ 
+                width: `${
+                  analysisStatus.combined === 'success' ? 100 :
+                  (analysisStatus.pagespeed === 'success' && analysisStatus.railway === 'success') ? 90 :
+                  (analysisStatus.pagespeed === 'success' || analysisStatus.railway === 'success') ? 60 :
+                  (analysisStatus.pagespeed === 'loading' || analysisStatus.railway === 'loading') ? 30 : 10
+                }%` 
+              }}
             />
           </div>
         </div>
@@ -1029,6 +1269,28 @@ export default function LighthouseDOMAnalyzer() {
                       <Eye size={16} />
                       {showDetails[index] ? 'Hide Details' : 'Show Details'}
                     </button>
+                    {/* Data Source Badge */}
+                    <div className={`px-3 py-1 rounded-lg text-sm font-bold ${
+                      result.analysis_method === 'HYBRID' ? 'bg-green-100 text-green-700' :
+                      result.analysis_method === 'FALLBACK_PAGESPEED_ONLY' ? 'bg-orange-100 text-orange-700' :
+                      'bg-gray-100 text-gray-700'
+                    }`}>
+                      {result.analysis_method === 'HYBRID' ? '🔥 HYBRID DATA' :
+                       result.analysis_method === 'FALLBACK_PAGESPEED_ONLY' ? '⚠️ PAGESPEED ONLY' : 'UNKNOWN'}
+                    </div>
+                    
+                    {/* Debug Button */}
+                    <button
+                      onClick={() => {
+                        console.log('🔍 DEBUG DATA:');
+                        console.log('Combined result:', window.lastCombinedResult);
+                        console.log('PageSpeed data:', window.lastPageSpeedData);
+                        console.log('Railway data:', window.lastRailwayData);
+                      }}
+                      className="flex items-center gap-2 px-3 py-1 bg-purple-100 text-purple-700 rounded-lg hover:bg-purple-200 text-sm"
+                    >
+                      🐛 Debug Data
+                    </button>
                   </div>
                 </div>
               </div>
@@ -1060,34 +1322,57 @@ export default function LighthouseDOMAnalyzer() {
                     </div>
                     <div className="bg-yellow-100 p-3 rounded-lg text-center">
                       <div className="text-sm text-gray-600">Max Children</div>
-                      <div className="text-2xl font-bold text-yellow-600">{Math.round(result.max_children || 0)}</div>
+                      <div className="text-2xl font-bold text-yellow-600">
+                        {Math.round(result.max_children || 0) === 0 ? 'N/A' : Math.round(result.max_children || 0)}
+                      </div>
                     </div>
                   </div>
+
+                  {/* REAL DOM Structure Display */}
+                  {result.analysis_method === 'HYBRID' && (
+                    <div className="bg-green-50 border-2 border-green-300 rounded-lg p-4 mb-4">
+                      <div className="flex items-center gap-2 mb-3">
+                        <div className="text-green-600 text-xl">🏗️</div>
+                        <strong className="text-green-900">REAL DOM Structure (Lighthouse CLI)</strong>
+                      </div>
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                        <div className="text-center">
+                          <div className="text-2xl font-bold text-blue-600">{Math.round(result.dom_nodes || 0).toLocaleString()}</div>
+                          <div className="text-sm text-gray-500">DOM Nodes</div>
+                          <div className="text-xs text-gray-400">
+                            {Math.round(result.dom_nodes || 0) > 1500 ? '⚠️ High' : '✅ Good'}
+                          </div>
+                        </div>
+                        <div className="text-center">
+                          <div className="text-2xl font-bold text-purple-600">{Math.round(result.dom_depth || 0)}</div>
+                          <div className="text-sm text-gray-500">DOM Depth</div>
+                          <div className="text-xs text-gray-400">
+                            {Math.round(result.dom_depth || 0) > 32 ? '⚠️ Deep' : '✅ Good'}
+                          </div>
+                        </div>
+                        <div className="text-center">
+                          <div className="text-2xl font-bold text-orange-600">{Math.round(result.max_children || 0)}</div>
+                          <div className="text-sm text-gray-500">Max Children</div>
+                          <div className="text-xs text-gray-400">
+                            {Math.round(result.max_children || 0) > 60 ? '🚨 Google Limit!' : '✅ OK'}
+                          </div>
+                        </div>
+                        <div className="text-center">
+                          <div className="text-2xl font-bold text-green-600">
+                            {result.dom_analysis?.crawlability_score || calculateCrawlabilityScore(result)}
+                          </div>
+                          <div className="text-sm text-gray-500">Crawl Score</div>
+                          <div className="text-xs text-gray-400">/100</div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
 
                   {/* Detailed Analysis */}
                   {showDetails[index] && (
                     <div className="border-t pt-6">
-                      <h4 className="text-lg font-semibold mb-4">🔍 Real DOM Structure Analysis</h4>
-                      <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-6">
-                        <div className="bg-gray-50 p-3 rounded-lg">
-                          <div className="text-sm text-gray-600">Total DOM Nodes</div>
-                          <div className="font-bold text-xl">{Math.round(result.dom_nodes || 0).toLocaleString()}</div>
-                        </div>
-                        <div className="bg-gray-50 p-3 rounded-lg">
-                          <div className="text-sm text-gray-600">DOM Depth</div>
-                          <div className="font-bold text-xl">{Math.round(result.dom_depth || 0)}</div>
-                        </div>
-                        <div className="bg-gray-50 p-3 rounded-lg">
-                          <div className="text-sm text-gray-600">Crawl Impact</div>
-                          <div className={`font-bold text-xl ${
-                            result.crawl_impact === 'LOW' ? 'text-green-600' :
-                            result.crawl_impact === 'MEDIUM' ? 'text-yellow-600' : 'text-red-600'
-                          }`}>
-                            {result.crawl_impact || 'LOW'}
-                          </div>
-                        </div>
-                      </div>
-
+                      <h4 className="text-lg font-semibold mb-4">🔍 Complete Analysis Details</h4>
+                      
                       {/* Resource Breakdown - SAFELY RENDERED */}
                       {result.resource_breakdown && (
                         <div className="mb-6">
@@ -1116,6 +1401,22 @@ export default function LighthouseDOMAnalyzer() {
                           </div>
                         </div>
                       )}
+
+                      {/* Analysis Method Info */}
+                      <div className="bg-gray-50 p-4 rounded-lg">
+                        <h4 className="text-lg font-semibold mb-2">📊 Analysis Method & Data Sources</h4>
+                        <div className="text-sm space-y-2">
+                          <div><strong>Method:</strong> {result.analysis_method}</div>
+                          <div><strong>Data Sources:</strong> {result.data_sources?.join(', ') || 'PageSpeed API'}</div>
+                          <div><strong>Lighthouse Version:</strong> {result.lighthouse_version || 'N/A'}</div>
+                          {result.analysis_method === 'HYBRID' && (
+                            <div className="text-green-700 font-semibold">✅ Full hybrid analysis with real DOM data from Lighthouse CLI</div>
+                          )}
+                          {result.analysis_method === 'FALLBACK_PAGESPEED_ONLY' && (
+                            <div className="text-orange-700 font-semibold">⚠️ Lighthouse CLI unavailable - using PageSpeed API only</div>
+                          )}
+                        </div>
+                      </div>
                     </div>
                   )}
                 </>
@@ -1127,18 +1428,30 @@ export default function LighthouseDOMAnalyzer() {
 
       {/* Footer */}
       <div className="bg-gray-50 p-6 rounded-lg mt-8">
-        <h3 className="text-xl font-bold text-gray-900 mb-4">🔧 Real-Time DOM Analysis & Competitive Intelligence</h3>
+        <h3 className="text-xl font-bold text-gray-900 mb-4">🔥 HONEY POT Data Architecture & Competitive Intelligence</h3>
         <p className="mb-4 text-gray-700">
-          This tool extracts real DOM structure data, page sizes, and performance metrics directly from Google's PageSpeed Insights API. 
-          No simulated data - everything is based on Google's actual analysis of your sites.
+          Revolutionary "Honey Pot" approach: Parallel data fetching from PageSpeed API and Railway Lighthouse CLI, then intelligent combination when both sources are ready.
         </p>
         <div className="text-sm text-gray-600 space-y-2">
-          <div><strong>🏗️ Real DOM Analysis:</strong> Actual node counts, depth, and children from Google's dom-size audit</div>
-          <div><strong>📦 Real Page Size:</strong> Calculated from network-requests audit data</div>
-          <div><strong>🚨 Real DOM Errors:</strong> Based on actual Lighthouse audit failures</div>
-          <div><strong>🔍 Verification Links:</strong> Check every result against Google PageSpeed directly</div>
-          <div><strong>🥊 Competitive Intelligence:</strong> Compare crawlability using Google's thresholds</div>
+          <div><strong>🍯 Honey Pot Architecture:</strong> Separate data buckets prevent blocking and allow fallback strategies</div>
+          <div><strong>⚡ Parallel Processing:</strong> PageSpeed and Railway data fetched simultaneously (not sequential)</div>
+          <div><strong>🎯 Smart Combination:</strong> Railway DOM data prioritized, PageSpeed performance data always used</div>
+          <div><strong>🔄 Fallback Protection:</strong> Works perfectly even if Railway fails</div>
+          <div><strong>📊 Real-time Status:</strong> See exactly what's happening with each data source</div>
+          <div><strong>🐛 Debug Tools:</strong> Full data visibility for troubleshooting</div>
         </div>
+        
+        {/* Debug Status */}
+        {(pagespeedData || railwayData) && (
+          <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+            <div className="text-sm font-bold text-blue-800 mb-2">🔍 Current Data Status:</div>
+            <div className="text-xs text-blue-700 space-y-1">
+              <div>PageSpeed Data: {pagespeedData ? '✅ Loaded' : '❌ Not loaded'}</div>
+              <div>Railway Data: {railwayData ? '✅ Loaded' : '❌ Not loaded'} {railwayData?.error && `(Error: ${railwayData.error})`}</div>
+              <div>Combined Status: {analysisStatus.combined}</div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
