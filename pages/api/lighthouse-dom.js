@@ -1,6 +1,6 @@
-// 🔥 VERCEL API - RAILWAY DOM INTEGRATION - DEBUG VERSION
+// 🔥 VERCEL API - RAILWAY DOM INTEGRATION - WITH USER API KEY
 // File: /pages/api/lighthouse-dom.js
-// Combines PageSpeed API (performance) + Railway Lighthouse (DOM data)
+// Combines PageSpeed API (with user's API key) + Railway Lighthouse (DOM data)
 
 export const config = {
   maxDuration: 300 // 5 minutes for Pro plan
@@ -11,14 +11,19 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const { url } = req.body;
+  const { url, apiKey } = req.body; // RECEIVE USER'S API KEY
   
   if (!url) {
     return res.status(400).json({ error: 'URL is required' });
   }
+  
+  if (!apiKey) {
+    return res.status(400).json({ error: 'API key is required' });
+  }
 
   try {
     console.log('🔄 Starting HYBRID analysis for:', url);
+    console.log('🔑 Using user API key:', apiKey.substring(0, 10) + '...');
     
     // Ensure URL has protocol
     const fullUrl = url.startsWith('http') ? url : `https://${url}`;
@@ -30,15 +35,7 @@ export default async function handler(req, res) {
     let domDataSource = 'FAILED';
     
     try {
-      // ENHANCED DEBUG LOGGING
       console.log('🚀 Calling Railway with URL:', fullUrl);
-      console.log('🚀 Railway endpoint:', 'https://lighthouse-dom-service-production.up.railway.app/dom-analysis');
-      console.log('🚀 Request headers:', {
-        'Content-Type': 'application/json',
-        'User-Agent': 'Vercel-Function/1.0',
-        'Accept': 'application/json'
-      });
-      
       const railwayStartTime = Date.now();
       
       const railwayResponse = await fetch('https://lighthouse-dom-service-production.up.railway.app/dom-analysis', {
@@ -49,15 +46,12 @@ export default async function handler(req, res) {
           'Accept': 'application/json'
         },
         body: JSON.stringify({ url: fullUrl }),
-        // Explicit timeout
         signal: AbortSignal.timeout(180000) // 3 minutes
       });
       
       const railwayResponseTime = Date.now() - railwayStartTime;
       console.log('🎯 Railway response time:', railwayResponseTime + 'ms');
       console.log('🎯 Railway response status:', railwayResponse.status);
-      console.log('🎯 Railway response ok:', railwayResponse.ok);
-      console.log('🎯 Railway response headers:', Object.fromEntries([...railwayResponse.headers.entries()]));
       
       if (!railwayResponse.ok) {
         console.error('❌ Railway HTTP error:', railwayResponse.status, railwayResponse.statusText);
@@ -65,7 +59,7 @@ export default async function handler(req, res) {
       }
       
       const railwayResult = await railwayResponse.json();
-      console.log('📦 Railway raw result:', JSON.stringify(railwayResult, null, 2));
+      console.log('📦 Railway result success:', railwayResult.success);
       
       if (railwayResult.success) {
         railwayDOMData = railwayResult.domData;
@@ -82,45 +76,62 @@ export default async function handler(req, res) {
         domDataSource = 'RAILWAY_FAILED';
       }
     } catch (railwayError) {
-      console.error('❌ Railway detailed error:');
-      console.error('- Error name:', railwayError.name);
-      console.error('- Error message:', railwayError.message);
-      console.error('- Error stack:', railwayError.stack);
-      console.error('- Error cause:', railwayError.cause);
+      console.error('❌ Railway error:', railwayError.name, railwayError.message);
       
       if (railwayError.name === 'AbortError') {
-        console.error('🕐 Railway timeout - analysis took longer than 3 minutes');
         domDataSource = 'RAILWAY_TIMEOUT';
       } else if (railwayError.message.includes('fetch')) {
-        console.error('🌐 Railway network error - connection failed');
         domDataSource = 'RAILWAY_NETWORK_ERROR';
       } else {
-        console.error('💥 Railway unknown error');
         domDataSource = 'RAILWAY_UNAVAILABLE';
       }
     }
     
-    // STEP 2: Get performance data from PageSpeed API (fast)
-    console.log('📱 Step 2: Getting performance scores from PageSpeed API...');
+    // STEP 2: Get performance data from PageSpeed API with USER'S API KEY
+    console.log('📱 Step 2: Getting performance scores from PageSpeed API with user key...');
+    
+    // BUILD PageSpeed URLs with user's API key
+    const pagespeedBaseUrl = 'https://www.googleapis.com/pagespeedonline/v5/runPagespeed';
+    const pagespeedParams = new URLSearchParams({
+      url: fullUrl,
+      key: apiKey, // USE USER'S API KEY
+      category: 'performance',
+      category: 'seo',
+      category: 'accessibility',
+      category: 'best-practices'
+    });
+    
+    const mobileUrl = `${pagespeedBaseUrl}?${pagespeedParams}&strategy=mobile`;
+    const desktopUrl = `${pagespeedBaseUrl}?${pagespeedParams}&strategy=desktop`;
+    
+    console.log('🔑 PageSpeed mobile URL:', mobileUrl.replace(apiKey, 'API_KEY_HIDDEN'));
     
     const [mobileResponse, desktopResponse] = await Promise.all([
-      fetch(`https://www.googleapis.com/pagespeedonline/v5/runPagespeed?url=${encodeURIComponent(fullUrl)}&strategy=mobile&category=performance&category=seo&category=accessibility&category=best-practices`),
+      fetch(mobileUrl),
       new Promise(resolve => 
         setTimeout(() => 
-          fetch(`https://www.googleapis.com/pagespeedonline/v5/runPagespeed?url=${encodeURIComponent(fullUrl)}&strategy=desktop&category=performance&category=seo&category=accessibility&category=best-practices`)
-            .then(resolve), 
+          fetch(desktopUrl).then(resolve), 
           3000
         )
       )
     ]);
+    
+    console.log('📊 PageSpeed mobile status:', mobileResponse.status);
+    console.log('📊 PageSpeed desktop status:', desktopResponse.status);
     
     const [mobileData, desktopData] = await Promise.all([
       mobileResponse.json(),
       desktopResponse.json()
     ]);
     
-    if (mobileData.error || desktopData.error) {
-      throw new Error(`PageSpeed API error: ${mobileData.error?.message || desktopData.error?.message}`);
+    if (mobileData.error) {
+      console.error('❌ PageSpeed mobile error:', mobileData.error);
+      throw new Error(`PageSpeed mobile API error: ${mobileData.error.message}`);
+    }
+    
+    if (desktopData.error) {
+      console.error('❌ PageSpeed desktop error:', desktopData.error);
+      throw new Error(`PageSpeed desktop API error: ${desktopData.error.message}`);
     }
     
     // Extract PageSpeed data
@@ -137,7 +148,7 @@ export default async function handler(req, res) {
     const hybridResult = {
       url: fullUrl,
       
-      // PERFORMANCE SCORES from PageSpeed API
+      // PERFORMANCE SCORES from PageSpeed API (with user's key)
       performance_mobile: Math.round((mobileData.lighthouseResult?.categories?.performance?.score || 0) * 100),
       performance_desktop: Math.round((desktopData.lighthouseResult?.categories?.performance?.score || 0) * 100),
       accessibility: Math.round((mobileData.lighthouseResult?.categories?.accessibility?.score || 0) * 100),
@@ -192,8 +203,9 @@ export default async function handler(req, res) {
         railwayDOMData.google_lighthouse_version : 
         'PageSpeed API only',
       data_sources: railwayDOMData ? 
-        ['PageSpeed Insights API', 'Railway Lighthouse CLI'] : 
-        ['PageSpeed Insights API'],
+        ['PageSpeed Insights API (User Key)', 'Railway Lighthouse CLI'] : 
+        ['PageSpeed Insights API (User Key)'],
+      api_key_used: true,
       
       status: 'success'
     };
