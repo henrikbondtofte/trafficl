@@ -290,7 +290,7 @@ export default function LighthouseDOMAnalyzer() {
           headers: {
             'Content-Type': 'application/json'
           },
-          body: JSON.stringify({ url: fullUrl })
+          body: JSON.stringify({ url: fullUrl, apiKey: apiKey.trim() })
         });
         
         const domResult = await domResponse.json();
