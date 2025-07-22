@@ -1,6 +1,10 @@
-// 🔥 VERCEL API - RAILWAY DOM INTEGRATION
+// 🔥 VERCEL API - RAILWAY DOM INTEGRATION - DEBUG VERSION
 // File: /pages/api/lighthouse-dom.js
 // Combines PageSpeed API (performance) + Railway Lighthouse (DOM data)
+
+export const config = {
+  maxDuration: 300 // 5 minutes for Pro plan
+}
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
@@ -26,15 +30,42 @@ export default async function handler(req, res) {
     let domDataSource = 'FAILED';
     
     try {
+      // ENHANCED DEBUG LOGGING
+      console.log('🚀 Calling Railway with URL:', fullUrl);
+      console.log('🚀 Railway endpoint:', 'https://lighthouse-dom-service-production.up.railway.app/dom-analysis');
+      console.log('🚀 Request headers:', {
+        'Content-Type': 'application/json',
+        'User-Agent': 'Vercel-Function/1.0',
+        'Accept': 'application/json'
+      });
+      
+      const railwayStartTime = Date.now();
+      
       const railwayResponse = await fetch('https://lighthouse-dom-service-production.up.railway.app/dom-analysis', {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          'User-Agent': 'Vercel-Function/1.0',
+          'Accept': 'application/json'
         },
-        body: JSON.stringify({ url: fullUrl })
+        body: JSON.stringify({ url: fullUrl }),
+        // Explicit timeout
+        signal: AbortSignal.timeout(180000) // 3 minutes
       });
       
+      const railwayResponseTime = Date.now() - railwayStartTime;
+      console.log('🎯 Railway response time:', railwayResponseTime + 'ms');
+      console.log('🎯 Railway response status:', railwayResponse.status);
+      console.log('🎯 Railway response ok:', railwayResponse.ok);
+      console.log('🎯 Railway response headers:', Object.fromEntries([...railwayResponse.headers.entries()]));
+      
+      if (!railwayResponse.ok) {
+        console.error('❌ Railway HTTP error:', railwayResponse.status, railwayResponse.statusText);
+        throw new Error(`Railway HTTP ${railwayResponse.status}: ${railwayResponse.statusText}`);
+      }
+      
       const railwayResult = await railwayResponse.json();
+      console.log('📦 Railway raw result:', JSON.stringify(railwayResult, null, 2));
       
       if (railwayResult.success) {
         railwayDOMData = railwayResult.domData;
@@ -43,15 +74,30 @@ export default async function handler(req, res) {
           nodes: railwayDOMData.dom_nodes,
           depth: railwayDOMData.dom_depth,
           children: railwayDOMData.max_children,
-          score: railwayDOMData.crawlability_score
+          score: railwayDOMData.crawlability_score,
+          risk: railwayDOMData.crawlability_risk
         });
       } else {
         console.log('⚠️ Railway DOM analysis failed:', railwayResult.error);
         domDataSource = 'RAILWAY_FAILED';
       }
     } catch (railwayError) {
-      console.log('⚠️ Railway service unavailable:', railwayError.message);
-      domDataSource = 'RAILWAY_UNAVAILABLE';
+      console.error('❌ Railway detailed error:');
+      console.error('- Error name:', railwayError.name);
+      console.error('- Error message:', railwayError.message);
+      console.error('- Error stack:', railwayError.stack);
+      console.error('- Error cause:', railwayError.cause);
+      
+      if (railwayError.name === 'AbortError') {
+        console.error('🕐 Railway timeout - analysis took longer than 3 minutes');
+        domDataSource = 'RAILWAY_TIMEOUT';
+      } else if (railwayError.message.includes('fetch')) {
+        console.error('🌐 Railway network error - connection failed');
+        domDataSource = 'RAILWAY_NETWORK_ERROR';
+      } else {
+        console.error('💥 Railway unknown error');
+        domDataSource = 'RAILWAY_UNAVAILABLE';
+      }
     }
     
     // STEP 2: Get performance data from PageSpeed API (fast)
