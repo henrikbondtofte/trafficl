@@ -1,12 +1,6 @@
-// 🔥 LIGHTHOUSE CLI API - VERCEL FIXED
+// 🔥 VERCEL API - RAILWAY DOM INTEGRATION
 // File: /pages/api/lighthouse-dom.js
-
-import { exec } from 'child_process';
-import { promisify } from 'util';
-import fs from 'fs/promises';
-import path from 'path';
-
-const execAsync = promisify(exec);
+// Combines PageSpeed API (performance) + Railway Lighthouse (DOM data)
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
@@ -20,207 +14,270 @@ export default async function handler(req, res) {
   }
 
   try {
-    console.log('🔍 Running Lighthouse CLI for DOM analysis:', url);
+    console.log('🔄 Starting HYBRID analysis for:', url);
     
-    // Generate unique filename for this run - USE /tmp for Vercel
-    const timestamp = Date.now();
-    const outputPath = path.join('/tmp', `lighthouse-${timestamp}.json`);
+    // Ensure URL has protocol
+    const fullUrl = url.startsWith('http') ? url : `https://${url}`;
     
-    console.log('📁 Output path:', outputPath);
+    // STEP 1: Get DOM data from Railway Lighthouse service
+    console.log('🏗️ Step 1: Getting REAL DOM data from Railway...');
     
-    // Run Lighthouse CLI with JSON output for DOM data
-    const lighthouseCommand = `npx lighthouse "${url}" --output json --output-path "${outputPath}" --chrome-flags="--headless --no-sandbox --disable-dev-shm-usage --disable-gpu --no-first-run --no-zygote --single-process" --preset=desktop --quiet`;
+    let railwayDOMData = null;
+    let domDataSource = 'FAILED';
     
-    console.log('🚀 Executing Lighthouse CLI...');
-    console.log('Command:', lighthouseCommand);
-    
-    // Execute Lighthouse CLI (timeout after 60 seconds)
-    await execAsync(lighthouseCommand, { 
-      timeout: 60000,
-      maxBuffer: 1024 * 1024 * 10, // 10MB buffer
-      env: {
-        ...process.env,
-        NODE_ENV: 'production',
-        // Try to use chrome-aws-lambda's Chrome
-        PUPPETEER_EXECUTABLE_PATH: '/opt/google/chrome/google-chrome',
-      }
-    });
-    
-    console.log('📖 Reading Lighthouse report...');
-    
-    // Read the generated JSON report
-    const reportData = await fs.readFile(outputPath, 'utf8');
-    const lighthouseResults = JSON.parse(reportData);
-    
-    // Extract DOM data from full Lighthouse report
-    const domData = extractDOMDataFromCLI(lighthouseResults);
-    
-    // Cleanup temp file
     try {
-      await fs.unlink(outputPath);
-      console.log('🗑️ Cleaned up temp file');
-    } catch (cleanupError) {
-      console.log('⚠️ Cleanup warning:', cleanupError.message);
+      const railwayResponse = await fetch('https://lighthouse-dom-service-production.up.railway.app/dom-analysis', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ url: fullUrl })
+      });
+      
+      const railwayResult = await railwayResponse.json();
+      
+      if (railwayResult.success) {
+        railwayDOMData = railwayResult.domData;
+        domDataSource = 'RAILWAY_LIGHTHOUSE_CLI';
+        console.log('✅ Railway DOM data received:', {
+          nodes: railwayDOMData.dom_nodes,
+          depth: railwayDOMData.dom_depth,
+          children: railwayDOMData.max_children,
+          score: railwayDOMData.crawlability_score
+        });
+      } else {
+        console.log('⚠️ Railway DOM analysis failed:', railwayResult.error);
+        domDataSource = 'RAILWAY_FAILED';
+      }
+    } catch (railwayError) {
+      console.log('⚠️ Railway service unavailable:', railwayError.message);
+      domDataSource = 'RAILWAY_UNAVAILABLE';
     }
     
-    console.log('✅ Lighthouse CLI DOM analysis complete:', domData);
+    // STEP 2: Get performance data from PageSpeed API (fast)
+    console.log('📱 Step 2: Getting performance scores from PageSpeed API...');
+    
+    const [mobileResponse, desktopResponse] = await Promise.all([
+      fetch(`https://www.googleapis.com/pagespeedonline/v5/runPagespeed?url=${encodeURIComponent(fullUrl)}&strategy=mobile&category=performance&category=seo&category=accessibility&category=best-practices`),
+      new Promise(resolve => 
+        setTimeout(() => 
+          fetch(`https://www.googleapis.com/pagespeedonline/v5/runPagespeed?url=${encodeURIComponent(fullUrl)}&strategy=desktop&category=performance&category=seo&category=accessibility&category=best-practices`)
+            .then(resolve), 
+          3000
+        )
+      )
+    ]);
+    
+    const [mobileData, desktopData] = await Promise.all([
+      mobileResponse.json(),
+      desktopResponse.json()
+    ]);
+    
+    if (mobileData.error || desktopData.error) {
+      throw new Error(`PageSpeed API error: ${mobileData.error?.message || desktopData.error?.message}`);
+    }
+    
+    // Extract PageSpeed data
+    const lighthouse = mobileData.lighthouseResult;
+    const pagespeedData = extractPageSpeedData(lighthouse);
+    
+    console.log('📦 PageSpeed data extracted:', {
+      pageSize: pagespeedData.page_size_mb + 'MB',
+      performanceMobile: Math.round((mobileData.lighthouseResult?.categories?.performance?.score || 0) * 100),
+      performanceDesktop: Math.round((desktopData.lighthouseResult?.categories?.performance?.score || 0) * 100)
+    });
+    
+    // STEP 3: Merge Railway DOM data + PageSpeed performance data
+    const hybridResult = {
+      url: fullUrl,
+      
+      // PERFORMANCE SCORES from PageSpeed API
+      performance_mobile: Math.round((mobileData.lighthouseResult?.categories?.performance?.score || 0) * 100),
+      performance_desktop: Math.round((desktopData.lighthouseResult?.categories?.performance?.score || 0) * 100),
+      accessibility: Math.round((mobileData.lighthouseResult?.categories?.accessibility?.score || 0) * 100),
+      best_practices: Math.round((mobileData.lighthouseResult?.categories?.['best-practices']?.score || 0) * 100),
+      seo: Math.round((mobileData.lighthouseResult?.categories?.seo?.score || 0) * 100),
+      
+      // REAL DOM DATA from Railway (if available)
+      dom_nodes: railwayDOMData ? railwayDOMData.dom_nodes : 0,
+      dom_depth: railwayDOMData ? railwayDOMData.dom_depth : 0,
+      max_children: railwayDOMData ? railwayDOMData.max_children : 0,
+      dom_errors: railwayDOMData ? railwayDOMData.dom_issues_count || 0 : pagespeedData.dom_errors,
+      
+      // PAGE SIZE from PageSpeed API
+      page_size_mb: pagespeedData.page_size_mb,
+      
+      // CRAWLABILITY from Railway (if available) or calculated
+      crawl_impact: railwayDOMData ? 
+        railwayDOMData.crawlability_risk : 
+        calculateCrawlImpact(pagespeedData.page_size_mb, 0, 0),
+      
+      // GSC RISK
+      gsc_risk: calculateGSCRisk(
+        Math.round((mobileData.lighthouseResult?.categories?.performance?.score || 0) * 100)
+      ),
+      
+      // CRITICAL ISSUES
+      critical_issues: pagespeedData.critical_issues,
+      
+      // PERFORMANCE METRICS
+      performance_metrics: pagespeedData.performance_metrics,
+      resource_breakdown: pagespeedData.resource_breakdown,
+      
+      // DOM ANALYSIS (enhanced if Railway data available)
+      dom_analysis: railwayDOMData ? {
+        total_nodes: railwayDOMData.dom_nodes,
+        node_depth: railwayDOMData.dom_depth,
+        max_children: railwayDOMData.max_children,
+        crawlability_score: railwayDOMData.crawlability_score,
+        crawlability_penalties: railwayDOMData.crawlability_penalties || [],
+        critical_path_length: Math.ceil(railwayDOMData.dom_depth / 3)
+      } : {
+        total_nodes: 0,
+        node_depth: 0,
+        max_children: 0,
+        crawlability_score: null,
+        critical_path_length: 0
+      },
+      
+      // METADATA
+      analysis_method: domDataSource,
+      lighthouse_version: railwayDOMData ? 
+        railwayDOMData.google_lighthouse_version : 
+        'PageSpeed API only',
+      data_sources: railwayDOMData ? 
+        ['PageSpeed Insights API', 'Railway Lighthouse CLI'] : 
+        ['PageSpeed Insights API'],
+      
+      status: 'success'
+    };
+    
+    console.log('✅ HYBRID analysis complete with data source:', domDataSource);
     
     res.status(200).json({
       success: true,
-      url: url,
-      domData: domData,
+      url: fullUrl,
+      domData: hybridResult,
       timestamp: new Date().toISOString()
     });
     
   } catch (error) {
-    console.error('❌ Lighthouse CLI error:', error);
+    console.error('❌ Hybrid analysis error:', error);
     
     res.status(500).json({
       success: false,
       error: error.message,
       url: url,
-      details: 'Lighthouse CLI execution failed on Vercel',
-      lighthouse_command: `npx lighthouse "${url}" --output json --output-path "/tmp/lighthouse-${Date.now()}.json" --chrome-flags="--headless --no-sandbox --disable-dev-shm-usage --disable-gpu --no-first-run --no-zygote --single-process" --preset=desktop --quiet`
+      details: 'Hybrid analysis failed'
     });
   }
 }
 
-// Extract REAL DOM data from Lighthouse CLI results
-function extractDOMDataFromCLI(lighthouseResults) {
-  console.log('🔍 Extracting DOM data from Lighthouse results...');
+// Extract PageSpeed API data  
+function extractPageSpeedData(lighthouseResult) {
+  const audits = lighthouseResult.audits;
   
-  const audits = lighthouseResults.audits;
-  
-  // Extract DOM size data - THIS IS THE REAL DATA!
-  let domNodes = 0;
-  let domDepth = 0;
-  let maxChildren = 0;
-  
-  if (audits['dom-size'] && audits['dom-size'].details && audits['dom-size'].details.items) {
-    const domItems = audits['dom-size'].details.items;
-    console.log('📊 Found dom-size audit items:', domItems.length);
-    
-    // CLI gives us REAL structure:
-    // items[0] = Total DOM elements  
-    // items[1] = Maximum DOM depth
-    // items[2] = Maximum child elements
-    
-    if (domItems[0] && domItems[0].value !== undefined) {
-      domNodes = domItems[0].value;
-      console.log('🏗️ DOM Nodes:', domNodes);
-    }
-    
-    if (domItems[1] && domItems[1].value !== undefined) {
-      domDepth = domItems[1].value;
-      console.log('📏 DOM Depth:', domDepth);
-    }
-    
-    if (domItems[2] && domItems[2].value !== undefined) {
-      maxChildren = domItems[2].value;
-      console.log('👶 Max Children:', maxChildren);
-    }
-  } else {
-    console.log('⚠️ No dom-size audit data found');
+  // Extract real page size
+  let totalSizeKB = 0;
+  let resourceBreakdown = {
+    html_kb: 0,
+    css_kb: 0,
+    js_kb: 0,
+    images_kb: 0,
+    other_kb: 0
+  };
+
+  // Method 1: total-byte-weight audit
+  if (audits['total-byte-weight']?.numericValue) {
+    totalSizeKB = audits['total-byte-weight'].numericValue / 1024;
   }
-  
-  // Extract additional DOM insights from Lighthouse
-  const mainDocumentDOMNodes = audits['dom-size']?.numericValue || domNodes;
-  const domScore = audits['dom-size']?.score !== null ? audits['dom-size'].score : 1;
-  
-  // Extract performance timing that affects DOM rendering
+
+  // Method 2: network-requests breakdown
+  if (audits['network-requests']?.details?.items) {
+    const networkRequests = audits['network-requests'].details.items;
+    let networkTotal = 0;
+    
+    networkRequests.forEach(request => {
+      const transferSize = request.transferSize || 0;
+      const resourceSize = request.resourceSize || 0;
+      const sizeToUse = Math.max(transferSize, resourceSize);
+      networkTotal += sizeToUse / 1024;
+      
+      const url = request.url || '';
+      const mimeType = request.mimeType || '';
+      
+      if (mimeType.includes('text/html') || url.includes('.html')) {
+        resourceBreakdown.html_kb += sizeToUse / 1024;
+      } else if (mimeType.includes('text/css') || url.includes('.css')) {
+        resourceBreakdown.css_kb += sizeToUse / 1024;
+      } else if (mimeType.includes('javascript') || url.includes('.js')) {
+        resourceBreakdown.js_kb += sizeToUse / 1024;
+      } else if (mimeType.includes('image/')) {
+        resourceBreakdown.images_kb += sizeToUse / 1024;
+      } else {
+        resourceBreakdown.other_kb += sizeToUse / 1024;
+      }
+    });
+    
+    if (networkTotal > totalSizeKB) {
+      totalSizeKB = networkTotal;
+    }
+  }
+
+  // Extract performance metrics
   const performanceMetrics = {
     fcp: audits['first-contentful-paint']?.numericValue || 0,
     lcp: audits['largest-contentful-paint']?.numericValue || 0,
     cls: audits['cumulative-layout-shift']?.numericValue || 0,
     tbt: audits['total-blocking-time']?.numericValue || 0,
-    tti: audits['interactive']?.numericValue || 0,
     speed_index: audits['speed-index']?.numericValue || 0
   };
+
+  // Count PageSpeed audit failures  
+  let domErrors = 0;
+  let criticalIssues = [];
   
-  // Extract critical DOM-related errors
-  const domRelatedIssues = [];
-  
-  Object.keys(audits).forEach(auditKey => {
-    const audit = audits[auditKey];
+  Object.entries(audits).forEach(([auditKey, audit]) => {
     if (audit.score !== null && audit.score < 0.9) {
       if (auditKey.includes('dom') || 
           auditKey.includes('render') || 
           auditKey.includes('layout') ||
-          auditKey.includes('paint') ||
+          auditKey.includes('contentful-paint') ||
           auditKey.includes('blocking')) {
-        domRelatedIssues.push({
-          audit: auditKey,
-          title: audit.title,
-          score: audit.score,
-          description: audit.description || 'No description available'
-        });
+        domErrors++;
+        const title = audit.title || auditKey;
+        criticalIssues.push(`${auditKey}: ${title}`);
       }
     }
   });
-  
-  console.log('🚨 Found DOM-related issues:', domRelatedIssues.length);
-  
-  // Calculate crawlability impact based on REAL data
-  let crawlabilityScore = 100;
-  
-  // Penalize based on Google's thresholds
-  if (domNodes > 1500) {
-    const penalty = Math.min(30, (domNodes - 1500) / 100);
-    crawlabilityScore -= penalty;
-    console.log('📉 DOM nodes penalty:', penalty, '(total nodes:', domNodes + ')');
-  }
-  
-  if (domDepth > 32) {
-    const penalty = Math.min(20, (domDepth - 32) * 2);
-    crawlabilityScore -= penalty;
-    console.log('📉 DOM depth penalty:', penalty, '(depth:', domDepth + ')');
-  }
-  
-  if (maxChildren > 60) {
-    const penalty = Math.min(25, (maxChildren - 60));
-    crawlabilityScore -= penalty;
-    console.log('📉 Max children penalty:', penalty, '(max children:', maxChildren + ')');
-  }
-  
-  if (domRelatedIssues.length > 5) {
-    const penalty = domRelatedIssues.length * 2;
-    crawlabilityScore -= penalty;
-    console.log('📉 DOM issues penalty:', penalty);
-  }
-  
-  crawlabilityScore = Math.max(0, Math.round(crawlabilityScore));
-  
-  const crawlabilityRisk = crawlabilityScore >= 80 ? 'LOW' : 
-                          crawlabilityScore >= 60 ? 'MEDIUM' : 'HIGH';
-  
-  console.log('🎯 Final crawlability score:', crawlabilityScore, '- Risk:', crawlabilityRisk);
-  
+
   return {
-    // REAL DOM STRUCTURE DATA
-    dom_nodes: domNodes,
-    dom_depth: domDepth,
-    max_children: maxChildren,
-    main_document_nodes: mainDocumentDOMNodes,
-    
-    // DOM QUALITY METRICS
-    dom_size_score: domScore,
-    crawlability_score: crawlabilityScore,
-    crawlability_risk: crawlabilityRisk,
-    
-    // PERFORMANCE IMPACT
+    page_size_mb: Math.round(totalSizeKB / 1024 * 100) / 100,
+    dom_errors: domErrors,
+    critical_issues: criticalIssues,
     performance_metrics: performanceMetrics,
-    
-    // CRITICAL ISSUES
-    dom_related_issues: domRelatedIssues,
-    dom_issues_count: domRelatedIssues.length,
-    
-    // ADDITIONAL INSIGHTS
-    google_lighthouse_version: lighthouseResults.lighthouseVersion,
-    analysis_timestamp: new Date().toISOString(),
-    
-    // RENDER BLOCKING ANALYSIS
-    render_blocking_resources: audits['render-blocking-resources']?.details?.items?.length || 0,
-    unused_css: audits['unused-css-rules']?.details?.items?.length || 0,
-    unused_js: audits['unused-javascript']?.details?.items?.length || 0
+    resource_breakdown: {
+      html_kb: Math.round(resourceBreakdown.html_kb),
+      css_kb: Math.round(resourceBreakdown.css_kb),
+      js_kb: Math.round(resourceBreakdown.js_kb),
+      images_kb: Math.round(resourceBreakdown.images_kb),
+      other_kb: Math.round(resourceBreakdown.other_kb)
+    }
   };
+}
+
+// Calculate crawl impact fallback
+function calculateCrawlImpact(pageSizeMB, domNodes, maxChildren) {
+  if (pageSizeMB > 4 || domNodes > 1800 || maxChildren > 60) {
+    return 'HIGH';
+  } else if (pageSizeMB > 2 || domNodes > 1200 || maxChildren > 40) {
+    return 'MEDIUM';
+  }
+  return 'LOW';
+}
+
+// Calculate GSC risk
+function calculateGSCRisk(performanceScore) {
+  return performanceScore < 50 ? 'HIGH' : 
+         performanceScore < 80 ? 'MEDIUM' : 'LOW';
 }
