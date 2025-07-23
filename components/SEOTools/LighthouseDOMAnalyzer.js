@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Zap, Download, ExternalLink, Eye, FileText, AlertCircle } from 'lucide-react';
 
 export default function LighthouseDOMAnalyzer() {
@@ -23,45 +23,8 @@ export default function LighthouseDOMAnalyzer() {
     combined: 'idle'
   });
 
-  // 🔥 SEPARATE PAGESPEED DATA FETCH
-  const fetchPageSpeedData = async (url) => {
-    const fullUrl = ensureProtocol(url);
-    
-    try {
-      console.log('🚀 Fetching PageSpeed data for:', fullUrl);
-      setAnalysisStatus(prev => ({ ...prev, pagespeed: 'loading' }));
-      
-      // Mobile data
-      const mobileResponse = await fetch(
-        `https://www.googleapis.com/pagespeedonline/v5/runPagespeed?url=${encodeURIComponent(fullUrl)}&strategy=mobile&key=${encodeURIComponent(apiKey.trim())}&category=performance&category=seo&category=accessibility&category=best-practices`
-      );
-      const mobileData = await mobileResponse.json();
-      
-      if (mobileData.error) throw new Error(mobileData.error.message);
-      
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      
-      // Desktop data
-      const desktopResponse = await fetch(
-        `https://www.googleapis.com/pagespeedonline/v5/runPagespeed?url=${encodeURIComponent(fullUrl)}&strategy=desktop&key=${encodeURIComponent(apiKey.trim())}&category=performance&category=seo&category=accessibility&category=best-practices`
-      );
-      const desktopData = await desktopResponse.json();
-      
-      if (desktopData.error) throw new Error(desktopData.error.message);
-      
-      // Extract and store PageSpeed data
-      const extractedData = {
-        url: fullUrl,
-        performance_mobile: Math.round((safeExtractValue(mobileData.lighthouseResult?.categories?.performance?.score) || 0) * 100),
-        performance_desktop: Math.round((safeExtractValue(desktopData.lighthouseResult?.categories?.performance?.score) || 0) * 100),
-        accessibility: Math.round((safeExtractValue(mobileData.lighthouseResult?.categories?.accessibility?.score) || 0) * 100),
-        best_practices: Math.round((safeExtractValue(mobileData.lighthouseResult?.categories?.['best-practices']?.score) || 0) * 100),
-        seo: Math.round((safeExtractValue(mobileData.lighthouseResult?.categories?.seo?.score) || 0) * 100),
-        lighthouse_result: mobileData.lighthouseResult,
-        raw_data: extractRealDOMDataFromPageSpeed(mobileData.lighthouseResult),
-        timestamp: Date.now()
-      // 🔥 COMBINE DATA WHEN BOTH READY - HONEY POT APPROACH
-  React.useEffect(() => {
+  // 🔥 COMBINE DATA WHEN BOTH READY - HONEY POT APPROACH
+  useEffect(() => {
     if (analysisStatus.pagespeed === 'success' && analysisStatus.railway === 'success' && pagespeedData && railwayData) {
       console.log('🎯 COMBINING DATA - Both sources ready!');
       
@@ -162,6 +125,325 @@ export default function LighthouseDOMAnalyzer() {
   // Check if API key is ready
   const isApiKeyReady = () => {
     return apiKey && apiKey.trim().length > 0;
+  };
+
+  // Helper function to ensure URL has protocol
+  const ensureProtocol = (url) => {
+    if (!url) return '';
+    const trimmedUrl = url.trim();
+    if (trimmedUrl.startsWith('http://') || trimmedUrl.startsWith('https://')) {
+      return trimmedUrl;
+    }
+    return `https://${trimmedUrl}`;
+  };
+
+  // Safe value extraction from API objects - FIXES REACT ERROR #31
+  const safeExtractValue = (apiObject) => {
+    if (typeof apiObject === 'number') return apiObject;
+    if (typeof apiObject === 'string') return parseFloat(apiObject) || 0;
+    if (apiObject && typeof apiObject === 'object') {
+      if ('value' in apiObject) return typeof apiObject.value === 'number' ? apiObject.value : 0;
+      if ('numericValue' in apiObject) return typeof apiObject.numericValue === 'number' ? apiObject.numericValue : 0;
+    }
+    return 0;
+  };
+
+  // Safe string extraction from API arrays/objects
+  const safeExtractString = (apiData) => {
+    if (typeof apiData === 'string') return apiData;
+    if (Array.isArray(apiData)) return apiData.filter(item => typeof item === 'string').join(', ');
+    if (apiData && typeof apiData === 'object' && 'title' in apiData) return apiData.title || '';
+    return '';
+  };
+
+  // Extract real DOM data from Lighthouse API response - FIXED
+  const extractRealDOMDataFromPageSpeed = (lighthouseResult) => {
+    const audits = lighthouseResult.audits;
+    
+    // Extract real page size
+    let totalSizeKB = 0;
+    let resourceBreakdown = {
+      html_kb: 0,
+      css_kb: 0,
+      js_kb: 0,
+      images_kb: 0,
+      other_kb: 0
+    };
+
+    // Try total-byte-weight first
+    if (audits['total-byte-weight'] && audits['total-byte-weight'].numericValue) {
+      totalSizeKB = safeExtractValue(audits['total-byte-weight'].numericValue) / 1024;
+    }
+
+    // Process network requests for breakdown
+    if (audits['network-requests'] && audits['network-requests'].details && audits['network-requests'].details.items) {
+      const networkRequests = audits['network-requests'].details.items;
+      let networkTotal = 0;
+      
+      networkRequests.forEach(request => {
+        const transferSize = safeExtractValue(request.transferSize);
+        networkTotal += transferSize / 1024;
+        
+        const url = request.url || '';
+        const mimeType = request.mimeType || '';
+        
+        if (mimeType.includes('text/html') || url.includes('.html')) {
+          resourceBreakdown.html_kb += transferSize / 1024;
+        } else if (mimeType.includes('text/css') || url.includes('.css')) {
+          resourceBreakdown.css_kb += transferSize / 1024;
+        } else if (mimeType.includes('javascript') || url.includes('.js')) {
+          resourceBreakdown.js_kb += transferSize / 1024;
+        } else if (mimeType.includes('image/') || url.match(/\.(png|jpg|jpeg|gif|webp|svg)$/)) {
+          resourceBreakdown.images_kb += transferSize / 1024;
+        } else {
+          resourceBreakdown.other_kb += transferSize / 1024;
+        }
+      });
+      
+      if (networkTotal > totalSizeKB) {
+        totalSizeKB = networkTotal;
+      }
+    }
+
+    // DOM complexity from dom-size audit
+    let domNodes = 0;
+    let domDepth = 0;
+    let maxChildren = 0;
+    
+    if (audits['dom-size'] && audits['dom-size'].details && audits['dom-size'].details.items) {
+      const domItems = audits['dom-size'].details.items;
+      
+      if (Array.isArray(domItems) && domItems.length >= 3) {
+        // Try direct array access
+        if (domItems[0] && typeof domItems[0].value !== 'undefined') {
+          domNodes = safeExtractValue(domItems[0].value);
+        }
+        if (domItems[1] && typeof domItems[1].value !== 'undefined') {
+          domDepth = safeExtractValue(domItems[1].value);
+        }
+        if (domItems[2] && typeof domItems[2].value !== 'undefined') {
+          maxChildren = safeExtractValue(domItems[2].value);
+        }
+      }
+      
+      // Try by statistic name if available
+      domItems.forEach(item => {
+        if (item.statistic === 'Total DOM Elements') {
+          domNodes = safeExtractValue(item.value || item.numericValue);
+        } else if (item.statistic === 'Maximum DOM Depth') {
+          domDepth = safeExtractValue(item.value || item.numericValue);
+        } else if (item.statistic === 'Maximum Child Elements') {
+          maxChildren = safeExtractValue(item.value || item.numericValue);
+        }
+      });
+    }
+
+    // Performance metrics
+    const performanceMetrics = {
+      fcp: safeExtractValue(audits['first-contentful-paint']?.numericValue),
+      lcp: safeExtractValue(audits['largest-contentful-paint']?.numericValue),
+      cls: safeExtractValue(audits['cumulative-layout-shift']?.numericValue),
+      tbt: safeExtractValue(audits['total-blocking-time']?.numericValue),
+      speed_index: safeExtractValue(audits['speed-index']?.numericValue)
+    };
+
+    // Count audit failures
+    let domErrors = 0;
+    let criticalIssues = [];
+    
+    Object.entries(audits).forEach(([auditKey, audit]) => {
+      const score = safeExtractValue(audit.score);
+      if (score !== null && score < 0.9) {
+        if (auditKey.includes('dom') || auditKey.includes('render') || auditKey.includes('layout')) {
+          domErrors++;
+          const title = safeExtractString(audit.title) || auditKey;
+          criticalIssues.push(`${auditKey}: ${title}`);
+        }
+      }
+    });
+
+    // Calculate crawl impact
+    const pageSizeMB = totalSizeKB / 1024;
+    let crawlImpact = 'LOW';
+    
+    if (pageSizeMB > 4 || domNodes > 1800 || domErrors > 8 || maxChildren > 60) {
+      crawlImpact = 'HIGH';
+    } else if (pageSizeMB > 2 || domNodes > 1200 || domErrors > 4 || maxChildren > 40) {
+      crawlImpact = 'MEDIUM';
+    }
+
+    // Return clean object
+    return {
+      page_size_mb: Math.round(pageSizeMB * 100) / 100,
+      dom_nodes: Math.round(domNodes) || 0,
+      dom_depth: Math.round(domDepth) || 0,
+      max_children: Math.round(maxChildren) || 0,
+      dom_errors: Math.round(domErrors) || 0,
+      critical_issues: criticalIssues.filter(issue => typeof issue === 'string'),
+      crawl_impact: crawlImpact,
+      performance_metrics: {
+        fcp: Math.round(performanceMetrics.fcp) || 0,
+        lcp: Math.round(performanceMetrics.lcp) || 0,
+        cls: Math.round(performanceMetrics.cls * 1000) / 1000 || 0,
+        tbt: Math.round(performanceMetrics.tbt) || 0,
+        speed_index: Math.round(performanceMetrics.speed_index) || 0
+      },
+      resource_breakdown: {
+        html_kb: Math.round(resourceBreakdown.html_kb) || 0,
+        css_kb: Math.round(resourceBreakdown.css_kb) || 0,
+        js_kb: Math.round(resourceBreakdown.js_kb) || 0,
+        images_kb: Math.round(resourceBreakdown.images_kb) || 0,
+        other_kb: Math.round(resourceBreakdown.other_kb) || 0
+      },
+      data_source: 'PageSpeed API'
+    };
+  };
+
+  // 🔥 SEPARATE PAGESPEED DATA FETCH
+  const fetchPageSpeedData = async (url) => {
+    const fullUrl = ensureProtocol(url);
+    
+    try {
+      console.log('🚀 Fetching PageSpeed data for:', fullUrl);
+      setAnalysisStatus(prev => ({ ...prev, pagespeed: 'loading' }));
+      
+      // Mobile data
+      const mobileResponse = await fetch(
+        `https://www.googleapis.com/pagespeedonline/v5/runPagespeed?url=${encodeURIComponent(fullUrl)}&strategy=mobile&key=${encodeURIComponent(apiKey.trim())}&category=performance&category=seo&category=accessibility&category=best-practices`
+      );
+      const mobileData = await mobileResponse.json();
+      
+      if (mobileData.error) throw new Error(mobileData.error.message);
+      
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      
+      // Desktop data
+      const desktopResponse = await fetch(
+        `https://www.googleapis.com/pagespeedonline/v5/runPagespeed?url=${encodeURIComponent(fullUrl)}&strategy=desktop&key=${encodeURIComponent(apiKey.trim())}&category=performance&category=seo&category=accessibility&category=best-practices`
+      );
+      const desktopData = await desktopResponse.json();
+      
+      if (desktopData.error) throw new Error(desktopData.error.message);
+      
+      // Extract and store PageSpeed data
+      const extractedData = {
+        url: fullUrl,
+        performance_mobile: Math.round((safeExtractValue(mobileData.lighthouseResult?.categories?.performance?.score) || 0) * 100),
+        performance_desktop: Math.round((safeExtractValue(desktopData.lighthouseResult?.categories?.performance?.score) || 0) * 100),
+        accessibility: Math.round((safeExtractValue(mobileData.lighthouseResult?.categories?.accessibility?.score) || 0) * 100),
+        best_practices: Math.round((safeExtractValue(mobileData.lighthouseResult?.categories?.['best-practices']?.score) || 0) * 100),
+        seo: Math.round((safeExtractValue(mobileData.lighthouseResult?.categories?.seo?.score) || 0) * 100),
+        lighthouse_result: mobileData.lighthouseResult,
+        raw_data: extractRealDOMDataFromPageSpeed(mobileData.lighthouseResult),
+        timestamp: Date.now()
+      // 🔥 COMBINE DATA WHEN BOTH READY - HONEY POT APPROACH
+  useEffect(() => {
+    if (analysisStatus.pagespeed === 'success' && analysisStatus.railway === 'success' && pagespeedData && railwayData) {
+      console.log('🎯 COMBINING DATA - Both sources ready!');
+      
+      // Combine PageSpeed + Railway data
+      const combinedResult = {
+        url: pagespeedData.url,
+        
+        // Performance from PageSpeed  
+        performance_mobile: pagespeedData.performance_mobile,
+        performance_desktop: pagespeedData.performance_desktop,
+        accessibility: pagespeedData.accessibility,
+        best_practices: pagespeedData.best_practices,
+        seo: pagespeedData.seo,
+        
+        // DOM data prioritize Railway over PageSpeed
+        dom_nodes: railwayData.dom_nodes || pagespeedData.raw_data.dom_nodes,
+        dom_depth: railwayData.dom_depth || pagespeedData.raw_data.dom_depth,
+        max_children: railwayData.max_children || pagespeedData.raw_data.max_children,
+        dom_errors: (railwayData.dom_issues_count || 0) + (pagespeedData.raw_data.dom_errors || 0),
+        
+        // Page size from PageSpeed
+        page_size_mb: pagespeedData.raw_data.page_size_mb,
+        
+        // Resource breakdown from PageSpeed
+        resource_breakdown: pagespeedData.raw_data.resource_breakdown,
+        
+        // Performance metrics from PageSpeed
+        performance_metrics: pagespeedData.raw_data.performance_metrics,
+        
+        // Crawl impact from Railway or PageSpeed
+        crawl_impact: railwayData.crawlability_risk || pagespeedData.raw_data.crawl_impact,
+        
+        // Analysis metadata
+        analysis_method: 'HYBRID',
+        data_sources: ['PageSpeed Insights API', 'Railway Lighthouse CLI'],
+        lighthouse_version: railwayData.google_lighthouse_version || 'Unknown',
+        
+        // Combined critical issues
+        critical_issues: [
+          ...pagespeedData.raw_data.critical_issues,
+          ...(railwayData.dom_related_issues?.map(issue => `${issue.audit}: ${issue.title}`) || [])
+        ],
+        
+        status: 'success'
+      };
+      
+      console.log('🎉 FINAL COMBINED RESULT:', combinedResult);
+      console.log('🔧 Values check:', {
+        maxChildren: combinedResult.max_children,
+        domNodes: combinedResult.dom_nodes,  
+        pageSize: combinedResult.page_size_mb,
+        resourceTotal: Object.values(combinedResult.resource_breakdown).reduce((a,b) => a+b, 0)
+      });
+      
+      // Store in results and debug
+      setResults([combinedResult]);
+      window.lastCombinedResult = combinedResult;
+      window.lastPageSpeedData = pagespeedData;
+      window.lastRailwayData = railwayData;
+      
+      setAnalysisStatus(prev => ({ ...prev, combined: 'success' }));
+      setIsRunning(false);
+      
+    } else if (analysisStatus.pagespeed === 'success' && analysisStatus.railway === 'error' && pagespeedData) {
+      console.log('⚠️ FALLBACK - Using PageSpeed data only');
+      
+      const fallbackResult = {
+        url: pagespeedData.url,
+        performance_mobile: pagespeedData.performance_mobile,
+        performance_desktop: pagespeedData.performance_desktop,
+        accessibility: pagespeedData.accessibility,
+        best_practices: pagespeedData.best_practices,
+        seo: pagespeedData.seo,
+        
+        // DOM data from PageSpeed only
+        dom_nodes: pagespeedData.raw_data.dom_nodes,
+        dom_depth: pagespeedData.raw_data.dom_depth,
+        max_children: pagespeedData.raw_data.max_children,
+        dom_errors: pagespeedData.raw_data.dom_errors,
+        page_size_mb: pagespeedData.raw_data.page_size_mb,
+        resource_breakdown: pagespeedData.raw_data.resource_breakdown,
+        performance_metrics: pagespeedData.raw_data.performance_metrics,
+        crawl_impact: pagespeedData.raw_data.crawl_impact,
+        critical_issues: pagespeedData.raw_data.critical_issues,
+        
+        analysis_method: 'FALLBACK_PAGESPEED_ONLY',
+        data_sources: ['PageSpeed Insights API'],
+        status: 'success'
+      };
+      
+      console.log('📄 FALLBACK RESULT:', fallbackResult);
+      setResults([fallbackResult]);
+      setAnalysisStatus(prev => ({ ...prev, combined: 'success' }));
+      setIsRunning(false);
+    }
+  }, [analysisStatus, pagespeedData, railwayData]);
+
+  // Check if API key is ready
+  const isApiKeyReady = () => {
+    return apiKey && apiKey.trim().length > 0;
+  };
+
+  // Helper function to open Google PageSpeed Insights
+  const openGooglePageSpeed = (url) => {
+    const googleUrl = `https://pagespeed.web.dev/report?url=${encodeURIComponent(url)}`;
+    window.open(googleUrl, '_blank');
   };
       
       console.log('✅ PageSpeed data extracted:', extractedData);
@@ -724,7 +1006,19 @@ export default function LighthouseDOMAnalyzer() {
         </div>
       </div>
 
-      {/* Competitor Analysis - TEMPORARILY DISABLED */}
+      {/* Batch URL Test - SIMPLIFIED */}
+      <div className="bg-green-50 rounded-lg p-6 mb-8 opacity-50">
+        <h2 className="text-xl font-semibold mb-4">📋 Batch URL Analysis</h2>
+        <p className="text-sm text-gray-600 mb-4">
+          Batch analysis temporarily simplified while we perfect the Honey Pot architecture.
+        </p>
+        <button
+          disabled
+          className="px-6 py-2 bg-gray-400 text-white rounded-lg cursor-not-allowed"
+        >
+          Coming Soon
+        </button>
+      </div>
       <div className="bg-orange-50 rounded-lg p-6 mb-8 opacity-50">
         <h2 className="text-xl font-semibold mb-4">🥊 Competitor Analysis</h2>
         <p className="text-sm text-gray-600 mb-4">
