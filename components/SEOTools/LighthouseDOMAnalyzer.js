@@ -21,6 +21,12 @@ export default function LighthouseDOMAnalyzer() {
     return apiKey && apiKey.trim().length > 0;
   };
 
+  // Helper function to open Google PageSpeed Insights
+  const openGooglePageSpeed = (url) => {
+    const googleUrl = `https://pagespeed.web.dev/report?url=${encodeURIComponent(url)}`;
+    window.open(googleUrl, '_blank');
+  };
+
   // 🔧 FIXED Test API key function
   const testApiKey = async () => {
     if (!apiKey.trim()) {
@@ -66,12 +72,6 @@ export default function LighthouseDOMAnalyzer() {
       setIsRunning(false);
       setTimeout(() => setTestStatus(''), 3000);
     }
-  };
-
-  // Helper function to open Google PageSpeed Insights
-  const openGooglePageSpeed = (url) => {
-    const googleUrl = `https://pagespeed.web.dev/report?url=${encodeURIComponent(url)}`;
-    window.open(googleUrl, '_blank');
   };
 
   // Toggle audit details
@@ -125,10 +125,19 @@ export default function LighthouseDOMAnalyzer() {
     const lighthouse = mobileData.lighthouseResult;
     const audits = lighthouse.audits;
     
-    // Extract page size
+    // 🔧 FIXED: Better page size extraction
     let totalSizeKB = 0;
-    if (audits['total-byte-weight'] && audits['total-byte-weight'].numericValue) {
-      totalSizeKB = audits['total-byte-weight'].numericValue / 1024;
+    if (audits['total-byte-weight']) {
+      if (audits['total-byte-weight'].numericValue) {
+        totalSizeKB = audits['total-byte-weight'].numericValue / 1024;
+      } else if (audits['total-byte-weight'].displayValue) {
+        // Try to parse from display value if numericValue is missing
+        const displayValue = audits['total-byte-weight'].displayValue;
+        const match = displayValue.match(/[\d,]+/);
+        if (match) {
+          totalSizeKB = parseInt(match[0].replace(/,/g, '')) / 1024;
+        }
+      }
     }
 
     // Extract DOM data from PageSpeed (limited but available)
@@ -152,11 +161,17 @@ export default function LighthouseDOMAnalyzer() {
       }
     }
 
-    // Count DOM errors
+    // 🔧 FIXED: Better DOM errors counting
     let domErrors = 0;
     Object.entries(audits).forEach(([auditKey, audit]) => {
       if (audit.score !== null && audit.score < 0.9) {
-        if (auditKey.includes('dom') || auditKey.includes('render') || auditKey.includes('layout')) {
+        // Count performance-related DOM issues
+        if (auditKey.includes('dom') || 
+            auditKey.includes('render') || 
+            auditKey.includes('layout') ||
+            auditKey.includes('cls') ||
+            auditKey.includes('largest-contentful-paint') ||
+            auditKey.includes('cumulative-layout-shift')) {
           domErrors++;
         }
       }
@@ -176,7 +191,7 @@ export default function LighthouseDOMAnalyzer() {
       pagespeed_max_children: maxChildren,
       pagespeed_dom_errors: domErrors,
       
-      // Page size
+      // Page size - FIXED
       page_size_mb: Math.round((totalSizeKB / 1024) * 100) / 100,
       
       data_source: 'PageSpeed API'
@@ -304,7 +319,7 @@ export default function LighthouseDOMAnalyzer() {
     return 'LOW';
   };
 
-  // Calculate crawlability score based on Google's thresholds
+  // 🎯 CRAWLABILITY SCORE CALCULATION - Based on Google's thresholds
   const calculateCrawlabilityScore = (site) => {
     let score = 100;
     
@@ -335,6 +350,43 @@ export default function LighthouseDOMAnalyzer() {
     else if (domDepth > 25) score -= 5;
     
     return Math.max(0, score);
+  };
+
+  // 📈 GENERATE COMPETITIVE ANALYSIS - Data processing
+  const generateCompetitiveAnalysis = () => {
+    // 🔥 FIXED: Don't require main results - work with competitors only if needed
+    if (competitorResults.length === 0 || isRunningCompetitors) return null;
+    
+    const validCompetitors = competitorResults.filter(comp => comp.status === 'success');
+    if (validCompetitors.length === 0) return null;
+    
+    // Check if we have main site results
+    let allSites = [...validCompetitors];
+    let yourSite = null;
+    
+    if (results.length > 0 && results[0].status === 'success') {
+      yourSite = results[0];
+      allSites = [yourSite, ...validCompetitors];
+    }
+    
+    // Calculate crawlability scores and add hostname
+    const sitesWithScores = allSites.map(site => ({
+      ...site,
+      crawlability_score: calculateCrawlabilityScore(site),
+      hostname: new URL(site.url).hostname
+    }));
+    
+    // Sort by crawlability score (higher is better)
+    const rankedSites = [...sitesWithScores].sort((a, b) => b.crawlability_score - a.crawlability_score);
+    
+    return {
+      your_site: yourSite,
+      all_sites: sitesWithScores,
+      ranked_sites: rankedSites,
+      winner: rankedSites[0],
+      loser: rankedSites[rankedSites.length - 1],
+      your_rank: yourSite ? rankedSites.findIndex(site => site.url === yourSite.url) + 1 : null
+    };
   };
 
   // Run single URL test
@@ -407,7 +459,7 @@ export default function LighthouseDOMAnalyzer() {
     setIsRunning(false);
   };
 
-  // 🔧 FIXED Run competitor analysis
+  // 🔧 FIXED Run competitor analysis - PRESERVE MAIN SITE
   const runCompetitorAnalysis = async () => {
     const urls = competitorUrls.split('\n').filter(url => url.trim());
     if (urls.length === 0) {
@@ -420,9 +472,13 @@ export default function LighthouseDOMAnalyzer() {
       return;
     }
 
+    // 🔒 PRESERVE MAIN SITE RESULTS
+    const preservedMainSite = [...results];
+    console.log('🔒 PRESERVING MAIN SITE:', preservedMainSite);
+
     setIsRunningCompetitors(true);
     setProgress({ current: 0, total: urls.length });
-    setCompetitorResults([]); // 🔥 CLEAR PREVIOUS RESULTS
+    setCompetitorResults([]); // 🔥 CLEAR PREVIOUS COMPETITOR RESULTS
 
     const compResults = [];
     
@@ -458,58 +514,12 @@ export default function LighthouseDOMAnalyzer() {
     
     console.log('🎉 Final competitor results:', compResults);
     setIsRunningCompetitors(false);
-  };
 
-  // Generate competitive analysis dashboard
-  const generateCompetitiveAnalysis = () => {
-  if (results.length === 0 || competitorResults.length === 0 || isRunningCompetitors) return null;
-    const myResult = results[0];
-    if (myResult.status === 'error') return null;
-
-    const validCompetitors = competitorResults.filter(comp => comp.status === 'success');
-    if (validCompetitors.length === 0) return null;
-
-    // Calculate averages and rankings
-    const allSites = [myResult, ...validCompetitors];
-    
-    const avgPerformanceMobile = validCompetitors.reduce((sum, comp) => sum + comp.performance_mobile, 0) / validCompetitors.length;
-    const avgPerformanceDesktop = validCompetitors.reduce((sum, comp) => sum + comp.performance_desktop, 0) / validCompetitors.length;
-    const avgPageSize = validCompetitors.reduce((sum, comp) => sum + comp.page_size_mb, 0) / validCompetitors.length;
-    const avgDomNodes = validCompetitors.reduce((sum, comp) => sum + comp.dom_nodes, 0) / validCompetitors.length;
-    const avgMaxChildren = validCompetitors.reduce((sum, comp) => sum + comp.max_children, 0) / validCompetitors.length;
-
-    // Rankings
-    const performanceRanking = allSites.sort((a, b) => b.performance_mobile - a.performance_mobile);
-    const pageSizeRanking = allSites.sort((a, b) => a.page_size_mb - b.page_size_mb);
-    const domNodesRanking = allSites.sort((a, b) => a.dom_nodes - b.dom_nodes);
-    const crawlabilityRanking = allSites.map(site => ({
-      ...site,
-      crawlability_score: calculateCrawlabilityScore(site)
-    })).sort((a, b) => b.crawlability_score - a.crawlability_score);
-
-    const myPerformanceRank = performanceRanking.findIndex(site => site.url === myResult.url) + 1;
-    const myPageSizeRank = pageSizeRanking.findIndex(site => site.url === myResult.url) + 1;
-    const myDomNodesRank = domNodesRanking.findIndex(site => site.url === myResult.url) + 1;
-    const myCrawlabilityRank = crawlabilityRanking.findIndex(site => site.url === myResult.url) + 1;
-
-    return {
-      myResult,
-      validCompetitors,
-      averages: {
-        performance_mobile: Math.round(avgPerformanceMobile),
-        performance_desktop: Math.round(avgPerformanceDesktop),
-        page_size_mb: Math.round(avgPageSize * 100) / 100,
-        dom_nodes: Math.round(avgDomNodes),
-        max_children: Math.round(avgMaxChildren)
-      },
-      rankings: {
-        performance: { rank: myPerformanceRank, total: allSites.length },
-        page_size: { rank: myPageSizeRank, total: allSites.length },
-        dom_nodes: { rank: myDomNodesRank, total: allSites.length },
-        crawlability: { rank: myCrawlabilityRank, total: allSites.length }
-      },
-      crawlabilityRanking
-    };
+    // 🔒 RESTORE MAIN SITE IF IT GOT LOST
+    if (results.length === 0 && preservedMainSite.length > 0) {
+      setResults(preservedMainSite);
+      console.log('🔒 RESTORED MAIN SITE');
+    }
   };
 
   // Toggle details
@@ -527,124 +537,333 @@ export default function LighthouseDOMAnalyzer() {
     }));
   };
 
-  // Competitive Analysis Dashboard Component
+  // 🏆 COMPETITIVE ANALYSIS DASHBOARD - The perfect executive overview
   const CompetitiveAnalysisDashboard = ({ analysis }) => {
     if (!analysis) return null;
-
-    const { myResult, validCompetitors, averages, rankings, crawlabilityRanking } = analysis;
-
+    
+    const { your_site, all_sites, ranked_sites, winner, loser, your_rank } = analysis;
+    
     return (
-      <div className="bg-gradient-to-r from-purple-50 to-pink-50 border-2 border-purple-300 rounded-lg p-6 mb-8">
-        <h2 className="text-2xl font-bold text-purple-900 mb-6">🏆 Competitive Intelligence Dashboard</h2>
-        
-        {/* Key Metrics Comparison */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-          <div className="bg-white p-4 rounded-lg shadow-sm">
-            <h3 className="text-sm font-medium text-gray-600 mb-2">Mobile Performance</h3>
-            <div className="flex items-center justify-between">
-              <div>
-                <div className="text-2xl font-bold text-blue-600">{myResult.performance_mobile}</div>
-                <div className="text-sm text-gray-500">You</div>
+      <div className="space-y-8 mb-8">
+        {/* Executive Summary */}
+        <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border-2 border-blue-300 rounded-lg p-6">
+          <h2 className="text-3xl font-bold text-gray-900 mb-6 text-center">🏆 CRAWLABILITY COMPETITION ANALYSIS</h2>
+          
+          {/* Winner/Loser Banner */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+            <div className="bg-gradient-to-br from-green-100 to-green-200 border-2 border-green-400 rounded-xl p-6 text-center">
+              <h3 className="text-2xl font-bold text-green-800 mb-3">👑 CRAWL CHAMPION</h3>
+              <div className="text-xl font-bold text-green-900 mb-2">{winner.hostname}</div>
+              <div className="text-lg text-green-800 mb-4">Score: {winner.crawlability_score}/100</div>
+              <div className="grid grid-cols-2 gap-2 text-sm">
+                <div>DOM Errors: <span className="font-bold">{winner.dom_errors}</span></div>
+                <div>Max Children: <span className="font-bold">{winner.max_children}</span></div>
+                <div>Page Size: <span className="font-bold">{winner.page_size_mb}MB</span></div>
+                <div>DOM Nodes: <span className="font-bold">{winner.dom_nodes}</span></div>
               </div>
-              <div className="text-right">
-                <div className="text-lg font-semibold text-gray-400">{averages.performance_mobile}</div>
-                <div className="text-sm text-gray-500">Competitors</div>
-              </div>
+              <button
+                onClick={() => openGooglePageSpeed(winner.url)}
+                className="mt-4 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center gap-2 mx-auto"
+              >
+                <ExternalLink size={16} />
+                Verify Data
+              </button>
             </div>
-            <div className="mt-2 text-xs text-gray-600">
-              Rank: #{rankings.performance.rank}/{rankings.performance.total}
-            </div>
-          </div>
-
-          <div className="bg-white p-4 rounded-lg shadow-sm">
-            <h3 className="text-sm font-medium text-gray-600 mb-2">Page Size</h3>
-            <div className="flex items-center justify-between">
-              <div>
-                <div className="text-2xl font-bold text-purple-600">{myResult.page_size_mb}MB</div>
-                <div className="text-sm text-gray-500">You</div>
+            
+            <div className="bg-gradient-to-br from-red-100 to-red-200 border-2 border-red-400 rounded-xl p-6 text-center">
+              <h3 className="text-2xl font-bold text-red-800 mb-3">🚨 CRAWL CHALLENGED</h3>
+              <div className="text-xl font-bold text-red-900 mb-2">{loser.hostname}</div>
+              <div className="text-lg text-red-800 mb-4">Score: {loser.crawlability_score}/100</div>
+              <div className="grid grid-cols-2 gap-2 text-sm">
+                <div>DOM Errors: <span className="font-bold">{loser.dom_errors}</span></div>
+                <div>Max Children: <span className="font-bold">{loser.max_children}</span></div>
+                <div>Page Size: <span className="font-bold">{loser.page_size_mb}MB</span></div>
+                <div>DOM Nodes: <span className="font-bold">{loser.dom_nodes}</span></div>
               </div>
-              <div className="text-right">
-                <div className="text-lg font-semibold text-gray-400">{averages.page_size_mb}MB</div>
-                <div className="text-sm text-gray-500">Competitors</div>
-              </div>
-            </div>
-            <div className="mt-2 text-xs text-gray-600">
-              Rank: #{rankings.page_size.rank}/{rankings.page_size.total} {rankings.page_size.rank <= 2 ? '(Lighter is better)' : ''}
-            </div>
-          </div>
-
-          <div className="bg-white p-4 rounded-lg shadow-sm">
-            <h3 className="text-sm font-medium text-gray-600 mb-2">DOM Complexity</h3>
-            <div className="flex items-center justify-between">
-              <div>
-                <div className="text-2xl font-bold text-orange-600">{myResult.dom_nodes.toLocaleString()}</div>
-                <div className="text-sm text-gray-500">You</div>
-              </div>
-              <div className="text-right">
-                <div className="text-lg font-semibold text-gray-400">{averages.dom_nodes.toLocaleString()}</div>
-                <div className="text-sm text-gray-500">Competitors</div>
-              </div>
-            </div>
-            <div className="mt-2 text-xs text-gray-600">
-              Rank: #{rankings.dom_nodes.rank}/{rankings.dom_nodes.total} {rankings.dom_nodes.rank <= 2 ? '(Simpler is better)' : ''}
+              <button
+                onClick={() => openGooglePageSpeed(loser.url)}
+                className="mt-4 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 flex items-center gap-2 mx-auto"
+              >
+                <ExternalLink size={16} />
+                Verify Data
+              </button>
             </div>
           </div>
 
-          <div className="bg-white p-4 rounded-lg shadow-sm">
-            <h3 className="text-sm font-medium text-gray-600 mb-2">Crawlability Score</h3>
-            <div className="flex items-center justify-between">
-              <div>
-                <div className="text-2xl font-bold text-green-600">{calculateCrawlabilityScore(myResult)}</div>
-                <div className="text-sm text-gray-500">You</div>
-              </div>
-              <div className="text-right">
-                <div className="text-lg font-semibold text-gray-400">
-                  {Math.round(validCompetitors.reduce((sum, comp) => sum + calculateCrawlabilityScore(comp), 0) / validCompetitors.length)}
+          {/* Your Position Alert */}
+          {your_site && your_rank && (
+            <div className={`p-4 rounded-lg border-2 mb-6 ${
+              your_rank === 1 ? 'bg-green-50 border-green-300' :
+              your_rank <= 2 ? 'bg-yellow-50 border-yellow-300' :
+              'bg-red-50 border-red-300'
+            }`}>
+              <div className="text-center">
+                <div className="text-2xl font-bold mb-2">
+                  YOUR SITE RANKS #{your_rank} OF {all_sites.length}
                 </div>
-                <div className="text-sm text-gray-500">Competitors</div>
+                <div className="text-lg">
+                  Crawlability Score: <span className="font-bold">{your_site.crawlability_score || calculateCrawlabilityScore(your_site)}/100</span>
+                </div>
+                {your_rank === 1 && <div className="text-green-700 font-bold mt-2">🥇 You're the crawl champion!</div>}
+                {your_rank > 1 && <div className="text-red-700 font-bold mt-2">⚠️ Room for improvement in crawlability</div>}
               </div>
             </div>
-            <div className="mt-2 text-xs text-gray-600">
-              Rank: #{rankings.crawlability.rank}/{rankings.crawlability.total}
-            </div>
+          )}
+        </div>
+
+        {/* Detailed Comparison Table */}
+        <div className="bg-white border-2 border-gray-300 rounded-lg overflow-hidden">
+          <div className="bg-gradient-to-r from-indigo-600 to-purple-700 text-white p-4">
+            <h3 className="text-xl font-bold text-center">📊 DETAILED CRAWLABILITY COMPARISON</h3>
+            <p className="text-center text-sm mt-1">Based on Google's crawling and indexing thresholds</p>
+          </div>
+          
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead className="bg-gray-100">
+                <tr>
+                  <th className="px-4 py-3 text-left font-bold">Website</th>
+                  <th className="px-4 py-3 text-center font-bold">🚨 DOM<br/>Errors</th>
+                  <th className="px-4 py-3 text-center font-bold">👶 Max<br/>Children</th>
+                  <th className="px-4 py-3 text-center font-bold">📦 Page<br/>Size (MB)</th>
+                  <th className="px-4 py-3 text-center font-bold">🏗️ DOM<br/>Nodes</th>
+                  <th className="px-4 py-3 text-center font-bold">📏 DOM<br/>Depth</th>
+                  <th className="px-4 py-3 text-center font-bold">📱 Mobile<br/>Perf</th>
+                  <th className="px-4 py-3 text-center font-bold">🖥️ Desktop<br/>Perf</th>
+                  <th className="px-4 py-3 text-center font-bold">🏆 Crawl<br/>Score</th>
+                  <th className="px-4 py-3 text-center font-bold">🔍 Verify</th>
+                </tr>
+              </thead>
+              <tbody>
+                {all_sites.map((site, idx) => {
+                  const isYourSite = your_site && site.url === your_site.url;
+                  const rank = ranked_sites.findIndex(s => s.url === site.url) + 1;
+                  const crawlScore = site.crawlability_score || calculateCrawlabilityScore(site);
+                  
+                  return (
+                    <tr key={idx} className={`border-b-2 ${
+                      isYourSite ? 'bg-blue-50 border-l-4 border-blue-500' : 'hover:bg-gray-50'
+                    }`}>
+                      <td className="px-4 py-4">
+                        <div className="flex items-center gap-2">
+                          {isYourSite && <span className="text-blue-600 font-bold text-lg">👑</span>}
+                          <div>
+                            <div className="font-bold text-gray-900">{site.hostname}</div>
+                            {isYourSite && <div className="text-xs text-blue-600 font-bold">YOUR SITE</div>}
+                            <div className="text-xs text-gray-500">Rank #{rank}</div>
+                          </div>
+                        </div>
+                      </td>
+                      
+                      {/* DOM Errors - MOST CRITICAL */}
+                      <td className="px-4 py-4 text-center">
+                        <div className={`text-3xl font-bold ${
+                          site.dom_errors === 0 ? 'text-green-600' :
+                          site.dom_errors <= 5 ? 'text-green-500' :
+                          site.dom_errors <= 10 ? 'text-yellow-600' :
+                          site.dom_errors <= 30 ? 'text-orange-600' : 'text-red-600'
+                        }`}>
+                          {site.dom_errors}
+                        </div>
+                        <div className="text-xs text-gray-500">
+                          {site.dom_errors === 0 ? 'Perfect' :
+                           site.dom_errors <= 10 ? 'Good' :
+                           site.dom_errors <= 30 ? 'Warning' : 'Critical'}
+                        </div>
+                      </td>
+                      
+                      {/* Max Children */}
+                      <td className="px-4 py-4 text-center">
+                        <div className={`text-2xl font-bold ${
+                          site.max_children <= 40 ? 'text-green-600' :
+                          site.max_children <= 60 ? 'text-yellow-600' : 'text-red-600'
+                        }`}>
+                          {site.max_children}
+                        </div>
+                        <div className="text-xs text-gray-500">
+                          {site.max_children > 60 ? 'Above Google limit!' : 'OK'}
+                        </div>
+                      </td>
+                      
+                      {/* Page Size */}
+                      <td className="px-4 py-4 text-center">
+                        <div className={`text-2xl font-bold ${
+                          site.page_size_mb <= 1.5 ? 'text-green-600' :
+                          site.page_size_mb <= 3 ? 'text-yellow-600' : 'text-red-600'
+                        }`}>
+                          {site.page_size_mb}
+                        </div>
+                        <div className="text-xs text-gray-500">
+                          {site.page_size_mb > 3 ? 'Heavy' : site.page_size_mb > 1.5 ? 'Moderate' : 'Light'}
+                        </div>
+                      </td>
+                      
+                      {/* DOM Nodes */}
+                      <td className="px-4 py-4 text-center">
+                        <div className={`text-xl font-bold ${
+                          site.dom_nodes <= 1200 ? 'text-green-600' :
+                          site.dom_nodes <= 1800 ? 'text-yellow-600' : 'text-red-600'
+                        }`}>
+                          {site.dom_nodes.toLocaleString()}
+                        </div>
+                      </td>
+                      
+                      {/* DOM Depth */}
+                      <td className="px-4 py-4 text-center">
+                        <div className={`text-xl font-bold ${
+                          site.dom_depth <= 25 ? 'text-green-600' :
+                          site.dom_depth <= 32 ? 'text-yellow-600' : 'text-red-600'
+                        }`}>
+                          {site.dom_depth}
+                        </div>
+                      </td>
+                      
+                      {/* Mobile Performance */}
+                      <td className="px-4 py-4 text-center">
+                        <div className={`text-xl font-bold ${
+                          site.performance_mobile >= 90 ? 'text-green-600' :
+                          site.performance_mobile >= 50 ? 'text-yellow-600' : 'text-red-600'
+                        }`}>
+                          {site.performance_mobile}
+                        </div>
+                      </td>
+                      
+                      {/* Desktop Performance */}
+                      <td className="px-4 py-4 text-center">
+                        <div className={`text-xl font-bold ${
+                          site.performance_desktop >= 90 ? 'text-green-600' :
+                          site.performance_desktop >= 50 ? 'text-yellow-600' : 'text-red-600'
+                        }`}>
+                          {site.performance_desktop}
+                        </div>
+                      </td>
+                      
+                      {/* Crawlability Score */}
+                      <td className="px-4 py-4 text-center">
+                        <div className={`text-2xl font-bold ${
+                          crawlScore >= 90 ? 'text-green-600' :
+                          crawlScore >= 70 ? 'text-yellow-600' : 'text-red-600'
+                        }`}>
+                          {crawlScore}
+                        </div>
+                        <div className="text-xs text-gray-500">/100</div>
+                      </td>
+                      
+                      {/* Verify Link */}
+                      <td className="px-4 py-4 text-center">
+                        <button
+                          onClick={() => openGooglePageSpeed(site.url)}
+                          className="px-3 py-2 bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 flex items-center gap-1 mx-auto text-sm"
+                        >
+                          <ExternalLink size={14} />
+                          Check
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
         </div>
 
-        {/* Crawlability Leaderboard */}
-        <div className="bg-white rounded-lg p-4">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">🏆 Crawlability Leaderboard</h3>
-          <div className="space-y-2">
-            {crawlabilityRanking.map((site, index) => (
-              <div 
-                key={site.url} 
-                className={`flex items-center justify-between p-3 rounded-lg ${
-                  site.url === myResult.url ? 'bg-blue-100 border-2 border-blue-300' : 'bg-gray-50'
-                }`}
-              >
-                <div className="flex items-center gap-3">
-                  <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ${
-                    index === 0 ? 'bg-yellow-400 text-yellow-900' :
-                    index === 1 ? 'bg-gray-300 text-gray-700' :
-                    index === 2 ? 'bg-orange-300 text-orange-900' :
-                    'bg-gray-200 text-gray-600'
-                  }`}>
-                    #{index + 1}
+        {/* Critical Insights */}
+        <div className="bg-gradient-to-r from-orange-50 to-red-50 border-2 border-orange-300 rounded-lg p-6">
+          <h3 className="text-xl font-bold text-center mb-4">🔍 CRITICAL CRAWLABILITY INSIGHTS</h3>
+          
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            {/* DOM Errors Analysis */}
+            <div className="bg-white p-4 rounded-lg border">
+              <h4 className="font-bold text-red-700 mb-3">🚨 DOM Errors Comparison</h4>
+              <div className="space-y-2 text-sm">
+                {your_site && (
+                  <div className="flex justify-between">
+                    <span>Your site:</span>
+                    <span className={`font-bold ${your_site.dom_errors <= 10 ? 'text-green-600' : 'text-red-600'}`}>
+                      {your_site.dom_errors} errors
+                    </span>
                   </div>
-                  <div>
-                    <div className="font-medium text-gray-900">
-                      {site.url === myResult.url ? '🏠 Your Site' : new URL(site.url).hostname}
-                    </div>
-                    <div className="text-sm text-gray-500">
-                      {site.dom_nodes.toLocaleString()} nodes • {site.max_children} max children • {site.page_size_mb}MB
-                    </div>
-                  </div>
+                )}
+                <div className="flex justify-between">
+                  <span>Best competitor:</span>
+                  <span className="font-bold text-green-600">
+                    {Math.min(...competitorResults.filter(c => c.status === 'success').map(c => c.dom_errors))} errors
+                  </span>
                 </div>
-                <div className="text-right">
-                  <div className="text-xl font-bold text-green-600">{site.crawlability_score}</div>
-                  <div className="text-sm text-gray-500">Score</div>
+                <div className="flex justify-between">
+                  <span>Worst competitor:</span>
+                  <span className="font-bold text-red-600">
+                    {Math.max(...competitorResults.filter(c => c.status === 'success').map(c => c.dom_errors))} errors
+                  </span>
                 </div>
               </div>
-            ))}
+              {your_site && your_site.dom_errors > 10 && (
+                <div className="mt-2 p-2 bg-red-50 text-red-700 text-xs rounded">
+                  ⚠️ High DOM errors can prevent Google from properly crawling your site!
+                </div>
+              )}
+            </div>
+
+            {/* Page Size Analysis */}
+            <div className="bg-white p-4 rounded-lg border">
+              <h4 className="font-bold text-blue-700 mb-3">📦 Page Size Impact</h4>
+              <div className="space-y-2 text-sm">
+                {your_site && (
+                  <div className="flex justify-between">
+                    <span>Your site:</span>
+                    <span className={`font-bold ${your_site.page_size_mb <= 3 ? 'text-green-600' : 'text-red-600'}`}>
+                      {your_site.page_size_mb}MB
+                    </span>
+                  </div>
+                )}
+                <div className="flex justify-between">
+                  <span>Lightest competitor:</span>
+                  <span className="font-bold text-green-600">
+                    {Math.min(...competitorResults.filter(c => c.status === 'success').map(c => c.page_size_mb))}MB
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Heaviest competitor:</span>
+                  <span className="font-bold text-red-600">
+                    {Math.max(...competitorResults.filter(c => c.status === 'success').map(c => c.page_size_mb))}MB
+                  </span>
+                </div>
+              </div>
+              {your_site && your_site.page_size_mb > 3 && (
+                <div className="mt-2 p-2 bg-orange-50 text-orange-700 text-xs rounded">
+                  ⚠️ Large pages waste crawl budget and slow indexing!
+                </div>
+              )}
+            </div>
+
+            {/* Children Elements Analysis */}
+            <div className="bg-white p-4 rounded-lg border">
+              <h4 className="font-bold text-purple-700 mb-3">👶 Child Elements</h4>
+              <div className="space-y-2 text-sm">
+                {your_site && (
+                  <div className="flex justify-between">
+                    <span>Your site:</span>
+                    <span className={`font-bold ${your_site.max_children <= 60 ? 'text-green-600' : 'text-red-600'}`}>
+                      {your_site.max_children} max
+                    </span>
+                  </div>
+                )}
+                <div className="flex justify-between">
+                  <span>Best competitor:</span>
+                  <span className="font-bold text-green-600">
+                    {Math.min(...competitorResults.filter(c => c.status === 'success').map(c => c.max_children))} max
+                  </span>
+                </div>
+                <div className="text-xs text-gray-600 mt-2">
+                  Google recommends max 60 children per parent element
+                </div>
+              </div>
+              {your_site && your_site.max_children > 60 && (
+                <div className="mt-2 p-2 bg-red-50 text-red-700 text-xs rounded">
+                  🚨 Exceeds Google's 60 children threshold!
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </div>
@@ -663,14 +882,14 @@ export default function LighthouseDOMAnalyzer() {
         
         <div className="mt-4 bg-green-50 border-2 border-green-300 rounded-lg p-4">
           <div className="flex items-center gap-2 mb-2">
-            <div className="text-green-600 text-xl">🔢</div>
-            <strong className="text-green-900">SIMPLE SEQUENTIAL APPROACH:</strong>
+            <div className="text-green-600 text-xl">🎯</div>
+            <strong className="text-green-900">PERFECT COMPETITIVE INTELLIGENCE:</strong>
           </div>
           <div className="text-sm text-green-800 space-y-1">
-            <div>• 📱 <strong>Step 1:</strong> Get PageSpeed data (performance + basic DOM)</div>
-            <div>• 🚂 <strong>Step 2:</strong> Get Railway data (enhanced DOM structure)</div>
-            <div>• 🎯 <strong>Step 3:</strong> Combine them (Railway preferred, PageSpeed fallback)</div>
-            <div>• ✅ <strong>Result:</strong> Best of both worlds with simple logic</div>
+            <div>• 🏆 <strong>Winner/Loser Analysis:</strong> See who dominates crawlability</div>
+            <div>• 📊 <strong>Detailed Comparison Table:</strong> Side-by-side metrics analysis</div>
+            <div>• 🔍 <strong>Critical Insights:</strong> DOM errors, page size, and complexity breakdown</div>
+            <div>• 👑 <strong>Your Position:</strong> See exactly where you rank vs competitors</div>
           </div>
         </div>
       </div>
@@ -730,7 +949,7 @@ export default function LighthouseDOMAnalyzer() {
           </button>
         </div>
         <div className="text-sm text-gray-600">
-          🔢 Simple sequential: PageSpeed → Railway → Combine (no parallel processing complexity)
+          🎯 Step 1: Test your main site first for competitive comparison
         </div>
       </div>
 
@@ -762,7 +981,7 @@ export default function LighthouseDOMAnalyzer() {
       <div className="bg-orange-50 rounded-lg p-6 mb-8">
         <h2 className="text-xl font-semibold mb-4">🥊 Competitor Analysis</h2>
         <p className="text-sm text-gray-600 mb-4">
-          Add competitor URLs to see how your DOM quality, page size, and crawlability compares
+          Add competitor URLs to see the amazing competitive intelligence dashboard
         </p>
         <div className="mb-4">
           <textarea
@@ -774,17 +993,15 @@ export default function LighthouseDOMAnalyzer() {
         </div>
         <button
           onClick={runCompetitorAnalysis}
-          disabled={isRunningCompetitors || !isApiKeyReady() || results.length === 0}
+          disabled={isRunningCompetitors || !isApiKeyReady()}
           className="px-6 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 disabled:opacity-50 flex items-center gap-2"
         >
           <Zap size={20} />
           {isRunningCompetitors ? 'Analyzing Competitors...' : 'Analyze Competitors'}
         </button>
-        {results.length === 0 && (
-          <div className="mt-2 text-sm text-orange-600">
-            ⚠️ Test your main site first, then add competitors for the full benchmark
-          </div>
-        )}
+        <div className="mt-2 text-sm text-orange-600">
+          💡 Works with or without main site - but main site analysis gives better insights!
+        </div>
       </div>
 
       {/* Progress */}
@@ -807,72 +1024,8 @@ export default function LighthouseDOMAnalyzer() {
         </div>
       )}
 
-      {/* Competitive Analysis Dashboard */}
-   {/* 🔥 FORCE COMPETITIVE DASHBOARD - FIXED */}
-{competitorResults.length > 0 && !isRunningCompetitors && (
-  <div className="bg-gradient-to-r from-purple-50 to-pink-50 border-2 border-purple-300 rounded-lg p-6 mb-8">
-    <h2 className="text-2xl font-bold text-purple-900 mb-6">🏆 Competitive Intelligence Dashboard</h2>
-    
-    {/* Quick Competitive Overview */}
-    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-      <div className="bg-white p-4 rounded-lg shadow-sm">
-        <h3 className="text-sm font-medium text-gray-600 mb-2">Competitors Analyzed</h3>
-        <div className="text-3xl font-bold text-blue-600">{competitorResults.filter(c => c.status === 'success').length}</div>
-        <div className="text-sm text-gray-500">Successfully analyzed</div>
-      </div>
-      
-      <div className="bg-white p-4 rounded-lg shadow-sm">
-        <h3 className="text-sm font-medium text-gray-600 mb-2">Average Performance</h3>
-        <div className="text-3xl font-bold text-green-600">
-          {Math.round(competitorResults.filter(c => c.status === 'success').reduce((sum, comp) => sum + comp.performance_mobile, 0) / competitorResults.filter(c => c.status === 'success').length) || 0}
-        </div>
-        <div className="text-sm text-gray-500">Mobile score</div>
-      </div>
-      
-      <div className="bg-white p-4 rounded-lg shadow-sm">
-        <h3 className="text-sm font-medium text-gray-600 mb-2">Best Max Children</h3>
-        <div className="text-3xl font-bold text-orange-600">
-          {Math.min(...competitorResults.filter(c => c.status === 'success').map(c => c.max_children)) || 'N/A'}
-        </div>
-        <div className="text-sm text-gray-500">Lowest complexity</div>
-      </div>
-    </div>
-
-    {/* Competitive Leaderboard */}
-    <div className="bg-white rounded-lg p-4">
-      <h3 className="text-lg font-semibold text-gray-900 mb-4">🏆 Performance Leaderboard</h3>
-      <div className="space-y-2">
-        {competitorResults
-          .filter(site => site.status === 'success')
-          .sort((a, b) => b.performance_mobile - a.performance_mobile)
-          .map((site, index) => (
-            <div key={site.url} className="flex items-center justify-between p-3 rounded-lg bg-gray-50">
-              <div className="flex items-center gap-3">
-                <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ${
-                  index === 0 ? 'bg-yellow-400 text-yellow-900' :
-                  index === 1 ? 'bg-gray-300 text-gray-700' :
-                  index === 2 ? 'bg-orange-300 text-orange-900' :
-                  'bg-gray-200 text-gray-600'
-                }`}>
-                  #{index + 1}
-                </div>
-                <div>
-                  <div className="font-medium text-gray-900">{new URL(site.url).hostname}</div>
-                  <div className="text-sm text-gray-500">
-                    {site.dom_nodes?.toLocaleString()} nodes • {site.max_children} max children • {site.page_size_mb}MB
-                  </div>
-                </div>
-              </div>
-              <div className="text-right">
-                <div className="text-xl font-bold text-blue-600">{site.performance_mobile}</div>
-                <div className="text-sm text-gray-500">Mobile Score</div>
-              </div>
-            </div>
-          ))}
-      </div>
-    </div>
-  </div>
-)}
+      {/* 🏆 COMPETITIVE ANALYSIS DASHBOARD - THE PERFECT VERSION */}
+      <CompetitiveAnalysisDashboard analysis={generateCompetitiveAnalysis()} />
 
       {/* Results Section */}
       {results.length > 0 && (
@@ -1077,7 +1230,7 @@ export default function LighthouseDOMAnalyzer() {
         </div>
       )}
 
-      {/* 🔥 COMPETITOR RESULTS SECTION - FIXED */}
+      {/* 🔥 COMPETITOR RESULTS SECTION */}
       {competitorResults.length > 0 && (
         <div className="space-y-6 mt-8">
           <h2 className="text-2xl font-bold text-gray-900">🥊 Competitor Analysis Results</h2>
@@ -1143,17 +1296,17 @@ export default function LighthouseDOMAnalyzer() {
 
       {/* Footer */}
       <div className="bg-gray-50 p-6 rounded-lg mt-8">
-        <h3 className="text-xl font-bold text-gray-900 mb-4">🔢 Simple Sequential Data Architecture</h3>
+        <h3 className="text-xl font-bold text-gray-900 mb-4">🏆 Perfect Competitive Intelligence</h3>
         <p className="mb-4 text-gray-700">
-          Simple approach: Get PageSpeed data first, then Railway data, then combine them. No complex parallel processing - just straightforward sequential execution that works reliably.
+          Now featuring the ultimate competitive analysis dashboard with winner/loser analysis, detailed comparison tables, and critical crawlability insights. See exactly where you stand against competitors!
         </p>
         <div className="text-sm text-gray-600 space-y-2">
-          <div><strong>🔢 Sequential Processing:</strong> One step at a time, easy to debug and understand</div>
-          <div><strong>📱 PageSpeed First:</strong> Always get performance scores and basic DOM data</div>
-          <div><strong>🚂 Railway Enhancement:</strong> Add detailed DOM structure when available</div>
-          <div><strong>🎯 Smart Combination:</strong> Railway data preferred, PageSpeed fallback guaranteed</div>
-          <div><strong>✅ Reliable Results:</strong> Works even if Railway fails completely</div>
-          <div><strong>🔄 Future-Proof:</strong> Easy to extend with additional data sources</div>
+          <div><strong>🏆 Executive Summary:</strong> Winner/loser banners with key metrics</div>
+          <div><strong>📊 Detailed Table:</strong> Side-by-side comparison of all crawlability factors</div>
+          <div><strong>🔍 Critical Insights:</strong> DOM errors, page size, and complexity analysis</div>
+          <div><strong>👑 Your Position:</strong> Clear ranking and improvement recommendations</div>
+          <div><strong>🎯 Google Thresholds:</strong> Based on actual Google crawling guidelines</div>
+          <div><strong>🔄 Hybrid Analysis:</strong> Railway CLI + PageSpeed API for maximum accuracy</div>
         </div>
       </div>
     </div>
