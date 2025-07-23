@@ -186,36 +186,55 @@ export default function CompetitiveBenchmarkDashboard() {
     return 'LOW';
   };
 
-  // Calculate score based on your thresholds
+  // Calculate score based on your thresholds - ENHANCED with real errors
   const calculateBenchmarkScore = (site) => {
     let score = 100;
     
-    // DOM Errors scoring
+    // HIGHEST PRIORITY: Real Lighthouse errors (most critical for crawlability)
+    const pushNodeFailures = site.lighthouse_real_errors?.dom_pushnode_failures || 0;
+    if (pushNodeFailures > 0) {
+      const penalty = Math.min(40, pushNodeFailures / 5); // Up to 40 points penalty
+      score -= penalty;
+    }
+    
+    if (site.lighthouse_real_errors?.image_gathering_failures) {
+      score -= 25; // Heavy penalty for image budget exceeded
+    }
+    
+    const resourceTimeouts = site.lighthouse_real_errors?.resource_timeouts?.length || 0;
+    if (resourceTimeouts > 0) {
+      const penalty = Math.min(20, resourceTimeouts * 5);
+      score -= penalty;
+    }
+    
+    if (site.lighthouse_real_errors?.rendering_budget_exceeded) {
+      score -= 15; // Rendering budget penalty
+    }
+    
+    // MEDIUM PRIORITY: DOM structure violations
     const domErrors = site.dom_errors || 0;
-    if (domErrors >= 30) score -= 40;
-    else if (domErrors >= 11) score -= 25;
-    else if (domErrors >= 6) score -= 15;
+    if (domErrors >= 30) score -= 20;
+    else if (domErrors >= 11) score -= 15;
+    else if (domErrors >= 6) score -= 10;
     else if (domErrors >= 1) score -= 5;
     
-    // Max Children scoring
+    // Max Children scoring (Google threshold critical)
     const maxChildren = site.max_children || 0;
-    if (maxChildren > 60) score -= 30; // Google limit exceeded
-    else if (maxChildren > 40) score -= 15;
+    if (maxChildren > 60) score -= 20; // Google limit exceeded
+    else if (maxChildren > 40) score -= 10;
     
-    // Page Size scoring
+    // LOWER PRIORITY: Page performance
     const pageSize = site.page_size_mb || 0;
-    if (pageSize > 3) score -= 20; // Heavy
-    else if (pageSize > 1.5) score -= 10; // Moderate
+    if (pageSize > 3) score -= 10; // Heavy
+    else if (pageSize > 1.5) score -= 5; // Moderate
     
-    // DOM Nodes scoring
     const domNodes = site.dom_nodes || 0;
-    if (domNodes > 1800) score -= 15; // Critical
-    else if (domNodes > 1200) score -= 8; // Warning
+    if (domNodes > 1800) score -= 10; // Critical
+    else if (domNodes > 1200) score -= 5; // Warning
     
-    // DOM Depth scoring
     const domDepth = site.dom_depth || 0;
-    if (domDepth > 32) score -= 10; // Critical
-    else if (domDepth > 25) score -= 5; // Warning
+    if (domDepth > 32) score -= 8; // Critical
+    else if (domDepth > 25) score -= 3; // Warning
     
     return Math.max(0, score);
   };
@@ -577,8 +596,94 @@ export default function CompetitiveBenchmarkDashboard() {
             </div>
             
             <div className="p-6">
-              {/* Railway Error Details */}
-              {analysis.yourSite.crawlability_penalties && analysis.yourSite.crawlability_penalties.length > 0 ? (
+              {/* Railway Error Details - ENHANCED */}
+              {analysis.yourSite.lighthouse_real_errors ? (
+                <div className="mb-6">
+                  <h4 className="text-lg font-bold text-red-700 mb-4 flex items-center gap-2">
+                    🚨 Critical Lighthouse Issues ({analysis.yourSite.lighthouse_real_errors.total_error_count || 0} found)
+                  </h4>
+                  <div className="space-y-3">
+                    {/* PushNode Failures */}
+                    {analysis.yourSite.lighthouse_real_errors.dom_pushnode_failures > 0 && (
+                      <div className="bg-red-50 border-l-4 border-red-500 p-4 rounded-lg">
+                        <div className="flex items-start gap-3">
+                          <AlertCircle className="text-red-500 mt-0.5" size={20} />
+                          <div>
+                            <div className="font-bold text-red-800">
+                              DOM PushNode Failures: {analysis.yourSite.lighthouse_real_errors.dom_pushnode_failures}
+                            </div>
+                            <div className="text-sm text-red-600 mt-1">
+                              → Chrome DevTools cannot properly inspect DOM elements
+                            </div>
+                            <div className="text-sm text-red-600">
+                              → Google crawler experiences similar navigation difficulties
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                    
+                    {/* Image Budget Exceeded */}
+                    {analysis.yourSite.lighthouse_real_errors.image_gathering_failures && (
+                      <div className="bg-orange-50 border-l-4 border-orange-500 p-4 rounded-lg">
+                        <div className="flex items-start gap-3">
+                          <AlertCircle className="text-orange-500 mt-0.5" size={20} />
+                          <div>
+                            <div className="font-bold text-orange-800">
+                              Image Gathering Budget Exceeded
+                            </div>
+                            <div className="text-sm text-orange-600 mt-1">
+                              → {analysis.yourSite.lighthouse_real_errors.image_gathering_failures}
+                            </div>
+                            <div className="text-sm text-orange-600">
+                              → Implement lazy loading and optimize image delivery
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                    
+                    {/* Resource Timeouts */}
+                    {analysis.yourSite.lighthouse_real_errors.resource_timeouts?.length > 0 && (
+                      <div className="bg-red-50 border-l-4 border-red-500 p-4 rounded-lg">
+                        <div className="flex items-start gap-3">
+                          <AlertCircle className="text-red-500 mt-0.5" size={20} />
+                          <div>
+                            <div className="font-bold text-red-800">
+                              Resource Timeouts: {analysis.yourSite.lighthouse_real_errors.resource_timeouts.length}
+                            </div>
+                            <div className="text-sm text-red-600 mt-1">
+                              → Critical resources failing to load within time limits
+                            </div>
+                            <div className="text-sm text-red-600">
+                              → Optimize server response times and resource delivery
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                    
+                    {/* Traditional Crawlability Penalties */}
+                    {analysis.yourSite.crawlability_penalties && analysis.yourSite.crawlability_penalties.length > 0 && (
+                      analysis.yourSite.crawlability_penalties.map((penalty, idx) => (
+                        <div key={idx} className="bg-yellow-50 border-l-4 border-yellow-500 p-4 rounded-lg">
+                          <div className="flex items-start gap-3">
+                            <AlertCircle className="text-yellow-500 mt-0.5" size={20} />
+                            <div>
+                              <div className="font-bold text-yellow-800">{penalty}</div>
+                              <div className="text-sm text-yellow-600 mt-1">
+                                {penalty.includes('DOM nodes') && '→ Consider reducing total HTML elements on the page'}
+                                {penalty.includes('Max children') && '→ Break down complex parent elements into smaller components'}
+                                {penalty.includes('depth') && '→ Flatten DOM structure to reduce nesting levels'}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              ) : analysis.yourSite.crawlability_penalties && analysis.yourSite.crawlability_penalties.length > 0 ? (
                 <div className="mb-6">
                   <h4 className="text-lg font-bold text-red-700 mb-4 flex items-center gap-2">
                     🚨 Railway Lighthouse Issues ({analysis.yourSite.crawlability_penalties.length} found)
