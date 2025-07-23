@@ -808,7 +808,7 @@ export default function LighthouseDOMAnalyzer() {
       )}
 
       {/* Competitive Analysis Dashboard */}
-      <CompetitiveAnalysisDashboard analysis={generateCompetitiveAnalysis()} />
+    {competitorResults.length > 0 && <CompetitiveAnalysisDashboard analysis={generateCompetitiveAnalysis()} />}
 
       {/* Results Section */}
       {results.length > 0 && (
