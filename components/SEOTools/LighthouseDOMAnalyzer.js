@@ -93,151 +93,201 @@ export default function LighthouseDOMAnalyzer() {
     return `https://${trimmedUrl}`;
   };
 
-  // Analyze single URL
-  const analyzeSingleUrl = async (url) => {
+  // 🔥 STEP 1: Get PageSpeed Data Separately
+  const getPageSpeedData = async (url) => {
     const fullUrl = ensureProtocol(url);
     
-    try {
-      // Get mobile performance data
-      const mobileResponse = await fetch(
-        `https://www.googleapis.com/pagespeedonline/v5/runPagespeed?url=${encodeURIComponent(fullUrl)}&strategy=mobile&key=${encodeURIComponent(apiKey.trim())}&category=performance&category=seo&category=accessibility&category=best-practices`
-      );
-      
-      if (!mobileResponse.ok) {
-        throw new Error(`HTTP ${mobileResponse.status}: ${mobileResponse.statusText}`);
-      }
-      
-      const mobileData = await mobileResponse.json();
-      
-      if (mobileData.error) {
-        throw new Error(`Mobile API error: ${mobileData.error.message}`);
-      }
+    console.log('📱 STEP 1: Getting PageSpeed data for:', fullUrl);
+    
+    // Get mobile data
+    const mobileResponse = await fetch(
+      `https://www.googleapis.com/pagespeedonline/v5/runPagespeed?url=${encodeURIComponent(fullUrl)}&strategy=mobile&key=${apiKey.trim()}&category=performance&category=seo&category=accessibility&category=best-practices`
+    );
+    const mobileData = await mobileResponse.json();
+    
+    if (mobileData.error) {
+      throw new Error(`PageSpeed Mobile API error: ${mobileData.error.message}`);
+    }
 
-      console.log('📱 Mobile data received for:', fullUrl);
-      
-      // Wait 3 seconds to avoid rate limiting
-      await new Promise(resolve => setTimeout(resolve, 3000));
-      
-      // Get desktop performance data
-      const desktopResponse = await fetch(
-        `https://www.googleapis.com/pagespeedonline/v5/runPagespeed?url=${encodeURIComponent(fullUrl)}&strategy=desktop&key=${encodeURIComponent(apiKey.trim())}&category=performance&category=seo&category=accessibility&category=best-practices`
-      );
-      
-      if (!desktopResponse.ok) {
-        throw new Error(`HTTP ${desktopResponse.status}: ${desktopResponse.statusText}`);
-      }
-      
-      const desktopData = await desktopResponse.json();
-      
-      if (desktopData.error) {
-        throw new Error(`Desktop API error: ${desktopData.error.message}`);
-      }
+    await new Promise(resolve => setTimeout(resolve, 3000)); // Rate limiting
 
-      console.log('🖥️ Desktop data received for:', fullUrl);
+    // Get desktop data
+    const desktopResponse = await fetch(
+      `https://www.googleapis.com/pagespeedonline/v5/runPagespeed?url=${encodeURIComponent(fullUrl)}&strategy=desktop&key=${apiKey.trim()}&category=performance&category=seo&category=accessibility&category=best-practices`
+    );
+    const desktopData = await desktopResponse.json();
+    
+    if (desktopData.error) {
+      throw new Error(`PageSpeed Desktop API error: ${desktopData.error.message}`);
+    }
 
-      // Extract DOM data from audits
-      const audits = mobileData.lighthouseResult.audits;
+    // Extract basic data from PageSpeed API
+    const lighthouse = mobileData.lighthouseResult;
+    const audits = lighthouse.audits;
+    
+    // Extract page size
+    let totalSizeKB = 0;
+    if (audits['total-byte-weight'] && audits['total-byte-weight'].numericValue) {
+      totalSizeKB = audits['total-byte-weight'].numericValue / 1024;
+    }
+
+    // Extract DOM data from PageSpeed (limited but available)
+    let domNodes = 0;
+    let domDepth = 0;
+    let maxChildren = 0;
+    
+    if (audits['dom-size'] && audits['dom-size'].details && audits['dom-size'].details.items) {
+      const domItems = audits['dom-size'].details.items;
       
-      // Get DOM size data
-      let domNodes = 0;
-      let domDepth = 0;
-      let maxChildren = 0;
-      
-      if (audits['dom-size'] && audits['dom-size'].details && audits['dom-size'].details.items) {
-        const domItems = audits['dom-size'].details.items;
-        
-        if (domItems.length >= 1 && domItems[0].value) {
+      if (Array.isArray(domItems) && domItems.length >= 3) {
+        if (domItems[0] && typeof domItems[0].value !== 'undefined') {
           domNodes = domItems[0].value;
         }
-        if (domItems.length >= 2 && domItems[1].value) {
+        if (domItems[1] && typeof domItems[1].value !== 'undefined') {
           domDepth = domItems[1].value;
         }
-        if (domItems.length >= 3 && domItems[2].value) {
+        if (domItems[2] && typeof domItems[2].value !== 'undefined') {
           maxChildren = domItems[2].value;
         }
       }
+    }
 
-      // Get page size data
-      let pageSizeBytes = 0;
-      if (audits['total-byte-weight'] && audits['total-byte-weight'].numericValue) {
-        pageSizeBytes = audits['total-byte-weight'].numericValue;
-      }
-
-      // Count DOM-related errors
-      let domErrors = 0;
-      Object.entries(audits).forEach(([auditKey, audit]) => {
-        if (audit.score !== null && audit.score < 0.9) {
-          if (auditKey.includes('dom') || auditKey.includes('render') || auditKey.includes('layout')) {
-            domErrors++;
-          }
+    // Count DOM errors
+    let domErrors = 0;
+    Object.entries(audits).forEach(([auditKey, audit]) => {
+      if (audit.score !== null && audit.score < 0.9) {
+        if (auditKey.includes('dom') || auditKey.includes('render') || auditKey.includes('layout')) {
+          domErrors++;
         }
+      }
+    });
+
+    const pagespeedResult = {
+      url: fullUrl,
+      performance_mobile: Math.round((mobileData.lighthouseResult?.categories?.performance?.score || 0) * 100),
+      performance_desktop: Math.round((desktopData.lighthouseResult?.categories?.performance?.score || 0) * 100),
+      accessibility: Math.round((mobileData.lighthouseResult?.categories?.accessibility?.score || 0) * 100),
+      best_practices: Math.round((mobileData.lighthouseResult?.categories?.['best-practices']?.score || 0) * 100),
+      seo: Math.round((mobileData.lighthouseResult?.categories?.seo?.score || 0) * 100),
+      
+      // PageSpeed DOM data (limited)
+      pagespeed_dom_nodes: domNodes,
+      pagespeed_dom_depth: domDepth,
+      pagespeed_max_children: maxChildren,
+      pagespeed_dom_errors: domErrors,
+      
+      // Page size
+      page_size_mb: Math.round((totalSizeKB / 1024) * 100) / 100,
+      
+      data_source: 'PageSpeed API'
+    };
+
+    console.log('✅ PageSpeed data extracted:', pagespeedResult);
+    return pagespeedResult;
+  };
+
+  // 🔥 STEP 2: Get Railway Data Separately  
+  const getRailwayData = async (url) => {
+    const fullUrl = ensureProtocol(url);
+    
+    console.log('🚂 STEP 2: Getting Railway data for:', fullUrl);
+    
+    try {
+      const railwayResponse = await fetch('/api/lighthouse-dom', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: fullUrl })
       });
-
-      // Try to get Railway data
-      let railwayData = null;
-      try {
-        console.log('🚂 Attempting Railway analysis for:', fullUrl);
-        const railwayResponse = await fetch('/api/lighthouse-dom', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ url: fullUrl }),
-        });
-
-        const railwayResult = await railwayResponse.json();
-        console.log('🚂 Railway result:', railwayResult);
-
-        if (railwayResult.success && railwayResult.domData) {
-          railwayData = railwayResult.domData;
-          console.log('✅ Railway data successful:', railwayData);
-        } else {
-          console.log('⚠️ Railway analysis failed:', railwayResult.error);
-        }
-      } catch (railwayError) {
-        console.error('🚂 Railway API error:', railwayError);
+      
+      const railwayResult = await railwayResponse.json();
+      console.log('📦 Railway raw response:', railwayResult);
+      
+      if (railwayResult.success && railwayResult.domData) {
+        console.log('✅ Railway data extracted:', railwayResult.domData);
+        return {
+          railway_dom_nodes: railwayResult.domData.dom_nodes,
+          railway_dom_depth: railwayResult.domData.dom_depth,
+          railway_max_children: railwayResult.domData.max_children,
+          railway_dom_errors: railwayResult.domData.dom_issues_count || 0,
+          railway_crawlability_score: railwayResult.domData.crawlability_score,
+          railway_crawlability_risk: railwayResult.domData.crawlability_risk,
+          data_source: 'Railway CLI'
+        };
+      } else {
+        console.log('⚠️ Railway analysis failed:', railwayResult.error);
+        return null;
       }
-
-      // Create result with Railway data if available, otherwise PageSpeed data
-      const result = {
-        url: fullUrl,
-        performance_mobile: Math.round((mobileData.lighthouseResult.categories.performance?.score || 0) * 100),
-        performance_desktop: Math.round((desktopData.lighthouseResult.categories.performance?.score || 0) * 100),
-        accessibility: Math.round((mobileData.lighthouseResult.categories.accessibility?.score || 0) * 100),
-        best_practices: Math.round((mobileData.lighthouseResult.categories['best-practices']?.score || 0) * 100),
-        seo: Math.round((mobileData.lighthouseResult.categories.seo?.score || 0) * 100),
-        
-        // Use Railway data if available, otherwise fall back to PageSpeed
-        dom_nodes: railwayData ? railwayData.dom_nodes : domNodes,
-        dom_depth: railwayData ? railwayData.dom_depth : domDepth,
-        max_children: railwayData ? railwayData.max_children : maxChildren,
-        dom_errors: railwayData ? (railwayData.dom_issues_count || 0) : domErrors,
-        
-        page_size_mb: Math.round((pageSizeBytes / 1024 / 1024) * 100) / 100,
-        
-        // Additional Railway data
-        crawlability_score: railwayData ? railwayData.crawlability_score : null,
-        crawl_impact: railwayData ? railwayData.crawlability_risk : calculateCrawlImpact(domNodes, maxChildren, pageSizeBytes, domErrors),
-        
-        // Metadata
-        analysis_method: railwayData ? 'HYBRID' : 'PAGESPEED_ONLY',
-        data_sources: railwayData ? ['PageSpeed Insights API', 'Railway Lighthouse CLI'] : ['PageSpeed Insights API'],
-        lighthouse_version: railwayData ? railwayData.google_lighthouse_version : 'PageSpeed API',
-        
-        timestamp: Date.now(),
-        status: 'success'
-      };
-
-      console.log('✅ Final result for', fullUrl, ':', result);
-      return result;
-
+      
     } catch (error) {
-      console.error('❌ Analysis error for', fullUrl, ':', error);
+      console.error('❌ Railway error:', error);
+      return null;
+    }
+  };
+
+  // 🔥 STEP 3: Combine Data Simply
+  const combineData = (pagespeedData, railwayData) => {
+    console.log('🎯 STEP 3: Combining data...');
+    console.log('- PageSpeed data:', pagespeedData);
+    console.log('- Railway data:', railwayData);
+    
+    // Use Railway data if available, otherwise PageSpeed fallback
+    const finalResult = {
+      url: pagespeedData.url,
+      
+      // Performance scores (always from PageSpeed)
+      performance_mobile: pagespeedData.performance_mobile,
+      performance_desktop: pagespeedData.performance_desktop,
+      accessibility: pagespeedData.accessibility,
+      best_practices: pagespeedData.best_practices,
+      seo: pagespeedData.seo,
+      
+      // DOM data (Railway first, PageSpeed fallback)
+      dom_nodes: railwayData ? railwayData.railway_dom_nodes : pagespeedData.pagespeed_dom_nodes,
+      dom_depth: railwayData ? railwayData.railway_dom_depth : pagespeedData.pagespeed_dom_depth,
+      max_children: railwayData ? railwayData.railway_max_children : pagespeedData.pagespeed_max_children,
+      dom_errors: railwayData ? railwayData.railway_dom_errors : pagespeedData.pagespeed_dom_errors,
+      
+      // Page size (always from PageSpeed)
+      page_size_mb: pagespeedData.page_size_mb,
+      
+      // Analysis metadata
+      analysis_method: railwayData ? 'HYBRID' : 'PAGESPEED_ONLY',
+      data_sources: railwayData ? ['PageSpeed API', 'Railway CLI'] : ['PageSpeed API'],
+      lighthouse_version: railwayData ? 'Railway CLI' : 'PageSpeed API only',
+      
+      // Additional Railway data if available
+      crawlability_score: railwayData ? railwayData.railway_crawlability_score : null,
+      crawl_impact: railwayData ? railwayData.railway_crawlability_risk : calculateCrawlImpact(pagespeedData.pagespeed_dom_nodes, pagespeedData.pagespeed_max_children, pagespeedData.page_size_mb * 1024 * 1024, pagespeedData.pagespeed_dom_errors),
+      
+      status: 'success'
+    };
+
+    console.log('🎉 Final combined result:', finalResult);
+    return finalResult;
+  };
+
+  // Main analysis function - SIMPLE SEQUENTIAL APPROACH
+  const runSingleAnalysis = async (url) => {
+    console.log('🚀 Starting SIMPLE SEQUENTIAL analysis for:', url);
+    
+    try {
+      // STEP 1: Get PageSpeed data (required)
+      const pagespeedData = await getPageSpeedData(url);
+      
+      // STEP 2: Get Railway data (optional)
+      const railwayData = await getRailwayData(url);
+      
+      // STEP 3: Combine them
+      const finalResult = combineData(pagespeedData, railwayData);
+      
+      return finalResult;
+      
+    } catch (error) {
+      console.error('🚨 Analysis error:', error);
       return {
-        url: fullUrl,
-        error: error.message,
-        status: 'error',
-        timestamp: Date.now()
+        url: ensureProtocol(url),
+        error: String(error.message || 'Unknown error'),
+        status: 'error'
       };
     }
   };
@@ -305,11 +355,11 @@ export default function LighthouseDOMAnalyzer() {
 
     try {
       setProgress({ current: 1, total: 1 });
-      const result = await analyzeSingleUrl(singleUrl.trim());
+      const result = await runSingleAnalysis(singleUrl.trim());
       setResults([result]);
     } catch (error) {
       console.error('Single test error:', error);
-      setResults([{ url: ensureProtocol(singleUrl.trim()), error: error.message, status: 'error' }]);
+      setResults([{ url: ensureProtocol(singleUrl.trim()), error: String(error.message), status: 'error' }]);
     } finally {
       setIsRunning(false);
     }
@@ -338,17 +388,18 @@ export default function LighthouseDOMAnalyzer() {
       if (url) {
         try {
           setProgress({ current: i + 1, total: urls.length });
-          const result = await analyzeSingleUrl(url);
+          const result = await runSingleAnalysis(url);
           batchResults.push(result);
-          setResults([...batchResults]); // Update results as we go
+          setResults([...batchResults]);
           
-          // Wait between requests to avoid rate limiting
           if (i < urls.length - 1) {
             await new Promise(resolve => setTimeout(resolve, 3000));
           }
         } catch (error) {
           console.error(`Batch test error for ${url}:`, error);
-          batchResults.push({ url: ensureProtocol(url), error: error.message, status: 'error' });
+          const errorResult = { url: ensureProtocol(url), error: String(error.message), status: 'error' };
+          batchResults.push(errorResult);
+          setResults([...batchResults]);
         }
       }
     }
@@ -356,7 +407,7 @@ export default function LighthouseDOMAnalyzer() {
     setIsRunning(false);
   };
 
-  // Run competitor analysis
+  // 🔧 FIXED Run competitor analysis
   const runCompetitorAnalysis = async () => {
     const urls = competitorUrls.split('\n').filter(url => url.trim());
     if (urls.length === 0) {
@@ -371,28 +422,41 @@ export default function LighthouseDOMAnalyzer() {
 
     setIsRunningCompetitors(true);
     setProgress({ current: 0, total: urls.length });
-    setCompetitorResults([]);
+    setCompetitorResults([]); // 🔥 CLEAR PREVIOUS RESULTS
 
     const compResults = [];
+    
     for (let i = 0; i < urls.length; i++) {
       const url = urls[i].trim();
       if (url) {
         try {
           setProgress({ current: i + 1, total: urls.length });
-          const result = await analyzeSingleUrl(url);
+          console.log(`🥊 Analyzing competitor ${i + 1}/${urls.length}: ${url}`);
+          
+          const result = await runSingleAnalysis(url); // 🔥 USE SAME FUNCTION AS SINGLE TEST
           compResults.push(result);
+          
+          // 🔥 UPDATE STATE AFTER EACH COMPETITOR
           setCompetitorResults([...compResults]);
+          console.log('🔍 Updated competitor results state:', compResults);
           
           if (i < urls.length - 1) {
             await new Promise(resolve => setTimeout(resolve, 3000));
           }
         } catch (error) {
           console.error(`Competitor analysis error for ${url}:`, error);
-          compResults.push({ url: ensureProtocol(url), error: error.message, status: 'error' });
+          const errorResult = { 
+            url: ensureProtocol(url), 
+            error: String(error.message), 
+            status: 'error' 
+          };
+          compResults.push(errorResult);
+          setCompetitorResults([...compResults]); // 🔥 UPDATE STATE EVEN FOR ERRORS
         }
       }
     }
     
+    console.log('🎉 Final competitor results:', compResults);
     setIsRunningCompetitors(false);
   };
 
@@ -595,19 +659,19 @@ export default function LighthouseDOMAnalyzer() {
           🔥 DOM Analyzer & Competitive Intelligence
         </h1>
         <p className="text-gray-600 text-lg">
-          Advanced DOM structure analysis with Railway.app integration for precise crawlability insights and competitive intelligence.
+          Simple sequential approach: Get PageSpeed data, get Railway data, combine them. No complex parallel processing - just works!
         </p>
         
-        <div className="mt-4 bg-blue-50 border-2 border-blue-300 rounded-lg p-4">
+        <div className="mt-4 bg-green-50 border-2 border-green-300 rounded-lg p-4">
           <div className="flex items-center gap-2 mb-2">
-            <div className="text-blue-600 text-xl">🚀</div>
-            <strong className="text-blue-900">Enhanced with Railway DOM Analysis:</strong>
+            <div className="text-green-600 text-xl">🔢</div>
+            <strong className="text-green-900">SIMPLE SEQUENTIAL APPROACH:</strong>
           </div>
-          <div className="text-sm text-blue-800 space-y-1">
-            <div>• 🏗️ <strong>Precise DOM Structure:</strong> Max Children, DOM Nodes, DOM Depth from server-side Lighthouse</div>
-            <div>• 📊 <strong>Crawlability Scoring:</strong> Based on Google's actual thresholds for DOM complexity</div>
-            <div>• 🥊 <strong>Competitive Intelligence:</strong> Compare your DOM quality against competitors</div>
-            <div>• 🔄 <strong>Hybrid Analysis:</strong> PageSpeed API + Railway CLI for maximum accuracy</div>
+          <div className="text-sm text-green-800 space-y-1">
+            <div>• 📱 <strong>Step 1:</strong> Get PageSpeed data (performance + basic DOM)</div>
+            <div>• 🚂 <strong>Step 2:</strong> Get Railway data (enhanced DOM structure)</div>
+            <div>• 🎯 <strong>Step 3:</strong> Combine them (Railway preferred, PageSpeed fallback)</div>
+            <div>• ✅ <strong>Result:</strong> Best of both worlds with simple logic</div>
           </div>
         </div>
       </div>
@@ -663,11 +727,11 @@ export default function LighthouseDOMAnalyzer() {
             className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2"
           >
             <Zap size={20} />
-            {isRunning ? 'Analyzing...' : 'Analyze'}
+            {isRunning ? 'Analyzing...' : 'Sequential Analysis'}
           </button>
         </div>
         <div className="text-sm text-gray-600">
-          🏗️ Hybrid analysis: PageSpeed API performance + Railway DOM structure
+          🔢 Simple sequential: PageSpeed → Railway → Combine (no parallel processing complexity)
         </div>
       </div>
 
@@ -675,7 +739,7 @@ export default function LighthouseDOMAnalyzer() {
       <div className="bg-green-50 rounded-lg p-6 mb-8">
         <h2 className="text-xl font-semibold mb-4">📋 Batch URL Analysis</h2>
         <p className="text-sm text-gray-600 mb-4">
-          Test multiple URLs with the same hybrid analysis approach
+          Test multiple URLs with the same simple sequential approach
         </p>
         <div className="mb-4">
           <textarea
@@ -799,57 +863,59 @@ export default function LighthouseDOMAnalyzer() {
                 </div>
               ) : (
                 <>
-                  {/* Quick Metrics */}
+                  {/* Quick Metrics - SAFELY RENDERED */}
                   <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
                     <div className="bg-blue-100 p-3 rounded-lg text-center">
                       <div className="text-sm text-gray-600">Mobile Performance</div>
-                      <div className="text-2xl font-bold text-blue-600">{result.performance_mobile}</div>
+                      <div className="text-2xl font-bold text-blue-600">{Math.round(result.performance_mobile || 0)}</div>
                     </div>
                     <div className="bg-green-100 p-3 rounded-lg text-center">
                       <div className="text-sm text-gray-600">Desktop Performance</div>
-                      <div className="text-2xl font-bold text-green-600">{result.performance_desktop}</div>
+                      <div className="text-2xl font-bold text-green-600">{Math.round(result.performance_desktop || 0)}</div>
                     </div>
                     <div className="bg-red-100 p-3 rounded-lg text-center">
                       <div className="text-sm text-gray-600">DOM Errors</div>
-                      <div className="text-2xl font-bold text-red-600">{result.dom_errors}</div>
+                      <div className="text-2xl font-bold text-red-600">{Math.round(result.dom_errors || 0)}</div>
                     </div>
                     <div className="bg-purple-100 p-3 rounded-lg text-center">
                       <div className="text-sm text-gray-600">Page Size</div>
-                      <div className="text-2xl font-bold text-purple-600">{result.page_size_mb}MB</div>
+                      <div className="text-2xl font-bold text-purple-600">{parseFloat(result.page_size_mb || 0).toFixed(1)}MB</div>
                     </div>
                     <div className="bg-yellow-100 p-3 rounded-lg text-center">
-                      <div className="text-sm text-gray-600">Crawlability</div>
-                      <div className="text-2xl font-bold text-yellow-600">{calculateCrawlabilityScore(result)}</div>
+                      <div className="text-sm text-gray-600">Max Children</div>
+                      <div className="text-2xl font-bold text-yellow-600">
+                        {Math.round(result.max_children || 0) === 0 ? 'N/A' : Math.round(result.max_children || 0)}
+                      </div>
                     </div>
                   </div>
 
-                  {/* Railway DOM Data - Enhanced Display */}
+                  {/* REAL DOM Structure Display */}
                   {result.analysis_method === 'HYBRID' && (
                     <div className="bg-green-50 border-2 border-green-300 rounded-lg p-4 mb-4">
                       <div className="flex items-center gap-2 mb-3">
                         <div className="text-green-600 text-xl">🏗️</div>
-                        <strong className="text-green-900">REAL DOM Structure (Railway + PageSpeed)</strong>
+                        <strong className="text-green-900">REAL DOM Structure (Railway CLI + PageSpeed API)</strong>
                       </div>
                       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                         <div className="text-center">
-                          <div className="text-2xl font-bold text-blue-600">{result.dom_nodes.toLocaleString()}</div>
+                          <div className="text-2xl font-bold text-blue-600">{Math.round(result.dom_nodes || 0).toLocaleString()}</div>
                           <div className="text-sm text-gray-500">DOM Nodes</div>
                           <div className="text-xs text-gray-400">
-                            {result.dom_nodes > 1500 ? '⚠️ High' : '✅ Good'}
+                            {Math.round(result.dom_nodes || 0) > 1500 ? '⚠️ High' : '✅ Good'}
                           </div>
                         </div>
                         <div className="text-center">
-                          <div className="text-2xl font-bold text-purple-600">{result.dom_depth}</div>
+                          <div className="text-2xl font-bold text-purple-600">{Math.round(result.dom_depth || 0)}</div>
                           <div className="text-sm text-gray-500">DOM Depth</div>
                           <div className="text-xs text-gray-400">
-                            {result.dom_depth > 32 ? '⚠️ Deep' : '✅ Good'}
+                            {Math.round(result.dom_depth || 0) > 32 ? '⚠️ Deep' : '✅ Good'}
                           </div>
                         </div>
                         <div className="text-center">
-                          <div className="text-2xl font-bold text-orange-600">{result.max_children}</div>
+                          <div className="text-2xl font-bold text-orange-600">{Math.round(result.max_children || 0)}</div>
                           <div className="text-sm text-gray-500">Max Children</div>
                           <div className="text-xs text-gray-400">
-                            {result.max_children > 60 ? '🚨 Google Limit!' : '✅ OK'}
+                            {Math.round(result.max_children || 0) > 60 ? '🚨 Google Limit!' : '✅ OK'}
                           </div>
                         </div>
                         <div className="text-center">
@@ -907,8 +973,7 @@ export default function LighthouseDOMAnalyzer() {
                             <h5 className="font-semibold text-purple-900 mb-2">📊 Data Quality</h5>
                             <div className="text-sm text-purple-800 space-y-1">
                               <div>• 🔄 <strong>Analysis method:</strong> {result.analysis_method}</div>
-                              <div>• 📡 <strong>Data sources:</strong> {result.data_sources.join(', ')}</div>
-                              <div>• 🕒 <strong>Analyzed:</strong> {new Date(result.timestamp).toLocaleString()}</div>
+                              <div>• 📡 <strong>Data sources:</strong> {result.data_sources?.join(', ')}</div>
                               {result.analysis_method === 'HYBRID' && (
                                 <div>• ✅ <strong>Enhanced accuracy:</strong> Railway CLI provides precise DOM measurements</div>
                               )}
@@ -924,70 +989,20 @@ export default function LighthouseDOMAnalyzer() {
                     <div className="border-t pt-6">
                       <h4 className="text-lg font-semibold mb-4">🔍 Complete Analysis Details</h4>
                       
-                      {/* Core Metrics */}
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        <div className="bg-gray-50 p-4 rounded-lg">
-                          <h5 className="font-semibold text-gray-900 mb-3">📊 Performance Scores</h5>
-                          <div className="space-y-2 text-sm">
-                            <div className="flex justify-between">
-                              <span>Mobile Performance</span>
-                              <span className="font-semibold">{result.performance_mobile}/100</span>
-                            </div>
-                            <div className="flex justify-between">
-                              <span>Desktop Performance</span>
-                              <span className="font-semibold">{result.performance_desktop}/100</span>
-                            </div>
-                            <div className="flex justify-between">
-                              <span>Accessibility</span>
-                              <span className="font-semibold">{result.accessibility}/100</span>
-                            </div>
-                            <div className="flex justify-between">
-                              <span>Best Practices</span>
-                              <span className="font-semibold">{result.best_practices}/100</span>
-                            </div>
-                            <div className="flex justify-between">
-                              <span>SEO</span>
-                              <span className="font-semibold">{result.seo}/100</span>
-                            </div>
-                          </div>
-                        </div>
-
-                        <div className="bg-gray-50 p-4 rounded-lg">
-                          <h5 className="font-semibold text-gray-900 mb-3">🏗️ DOM Structure</h5>
-                          <div className="space-y-2 text-sm">
-                            <div className="flex justify-between">
-                              <span>Total DOM Nodes</span>
-                              <span className="font-semibold">{result.dom_nodes.toLocaleString()}</span>
-                            </div>
-                            <div className="flex justify-between">
-                              <span>DOM Depth</span>
-                              <span className="font-semibold">{result.dom_depth} levels</span>
-                            </div>
-                            <div className="flex justify-between">
-                              <span>Max Children</span>
-                              <span className="font-semibold">{result.max_children} elements</span>
-                            </div>
-                            <div className="flex justify-between">
-                              <span>DOM Errors</span>
-                              <span className="font-semibold">{result.dom_errors} issues</span>
-                            </div>
-                            <div className="flex justify-between">
-                              <span>Page Size</span>
-                              <span className="font-semibold">{result.page_size_mb}MB</span>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Technical Details */}
-                      <div className="mt-6 bg-gray-50 p-4 rounded-lg">
-                        <h5 className="font-semibold text-gray-900 mb-3">🔧 Technical Details</h5>
+                      {/* Analysis Method Info */}
+                      <div className="bg-gray-50 p-4 rounded-lg">
+                        <h4 className="text-lg font-semibold mb-2">📊 Analysis Method & Data Sources</h4>
                         <div className="text-sm space-y-2">
-                          <div><strong>Analysis Method:</strong> {result.analysis_method}</div>
-                          <div><strong>Data Sources:</strong> {result.data_sources.join(', ')}</div>
-                          <div><strong>Lighthouse Version:</strong> {result.lighthouse_version}</div>
-                          <div><strong>Crawl Impact:</strong> {result.crawl_impact}</div>
-                          <div><strong>Crawlability Score:</strong> {result.crawlability_score || calculateCrawlabilityScore(result)}/100</div>
+                          <div><strong>Method:</strong> {result.analysis_method}</div>
+                          <div><strong>Data Sources:</strong> {result.data_sources?.join(', ') || 'PageSpeed API'}</div>
+                          <div><strong>Lighthouse Version:</strong> {result.lighthouse_version || 'N/A'}</div>
+                          <div><strong>Crawl Impact:</strong> {result.crawl_impact || 'Unknown'}</div>
+                          {result.analysis_method === 'HYBRID' && (
+                            <div className="text-green-700 font-semibold">✅ Full hybrid analysis with Railway DOM + PageSpeed performance</div>
+                          )}
+                          {result.analysis_method === 'PAGESPEED_ONLY' && (
+                            <div className="text-orange-700 font-semibold">⚠️ Railway unavailable - using PageSpeed API only</div>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -999,7 +1014,7 @@ export default function LighthouseDOMAnalyzer() {
         </div>
       )}
 
-      {/* Competitor Results */}
+      {/* 🔥 COMPETITOR RESULTS SECTION - FIXED */}
       {competitorResults.length > 0 && (
         <div className="space-y-6 mt-8">
           <h2 className="text-2xl font-bold text-gray-900">🥊 Competitor Analysis Results</h2>
@@ -1009,7 +1024,7 @@ export default function LighthouseDOMAnalyzer() {
               <div className="flex justify-between items-start mb-4">
                 <div className="flex-1">
                   <h3 className="text-lg font-semibold text-gray-900 mb-2">
-                    🏢 {new URL(result.url).hostname}
+                    🏢 {result.url ? new URL(result.url).hostname : 'Unknown'}
                   </h3>
                   <div className="flex items-center gap-4">
                     <button
@@ -1053,8 +1068,8 @@ export default function LighthouseDOMAnalyzer() {
                     <div className="text-2xl font-bold text-purple-600">{result.page_size_mb}MB</div>
                   </div>
                   <div className="bg-white p-3 rounded-lg text-center">
-                    <div className="text-sm text-gray-600">Crawlability</div>
-                    <div className="text-2xl font-bold text-yellow-600">{calculateCrawlabilityScore(result)}</div>
+                    <div className="text-sm text-gray-600">Max Children</div>
+                    <div className="text-2xl font-bold text-yellow-600">{result.max_children}</div>
                   </div>
                 </div>
               )}
@@ -1065,17 +1080,17 @@ export default function LighthouseDOMAnalyzer() {
 
       {/* Footer */}
       <div className="bg-gray-50 p-6 rounded-lg mt-8">
-        <h3 className="text-xl font-bold text-gray-900 mb-4">🔥 Advanced DOM Analysis & Competitive Intelligence</h3>
+        <h3 className="text-xl font-bold text-gray-900 mb-4">🔢 Simple Sequential Data Architecture</h3>
         <p className="mb-4 text-gray-700">
-          This tool combines Google PageSpeed Insights API with Railway.app server-side Lighthouse analysis for the most accurate DOM structure measurements available. Perfect for SEO professionals who need precise crawlability insights.
+          Simple approach: Get PageSpeed data first, then Railway data, then combine them. No complex parallel processing - just straightforward sequential execution that works reliably.
         </p>
         <div className="text-sm text-gray-600 space-y-2">
-          <div><strong>🏗️ DOM Structure Analysis:</strong> Precise measurements of DOM nodes, depth, and max children per element</div>
-          <div><strong>📊 Crawlability Scoring:</strong> Based on Google's documented thresholds for DOM complexity</div>
-          <div><strong>🥊 Competitive Intelligence:</strong> Compare your site's technical SEO against competitors</div>
-          <div><strong>🔄 Hybrid Data Sources:</strong> PageSpeed API for performance + Railway CLI for enhanced DOM analysis</div>
-          <div><strong>⚡ Real-time Analysis:</strong> Live data from Google's actual crawling infrastructure</div>
-          <div><strong>🎯 Actionable Insights:</strong> Specific recommendations for improving crawlability</div>
+          <div><strong>🔢 Sequential Processing:</strong> One step at a time, easy to debug and understand</div>
+          <div><strong>📱 PageSpeed First:</strong> Always get performance scores and basic DOM data</div>
+          <div><strong>🚂 Railway Enhancement:</strong> Add detailed DOM structure when available</div>
+          <div><strong>🎯 Smart Combination:</strong> Railway data preferred, PageSpeed fallback guaranteed</div>
+          <div><strong>✅ Reliable Results:</strong> Works even if Railway fails completely</div>
+          <div><strong>🔄 Future-Proof:</strong> Easy to extend with additional data sources</div>
         </div>
       </div>
     </div>
