@@ -68,6 +68,8 @@ export default function CompetitiveBenchmarkDashboard() {
         if (domResult.success) {
           railwayDOMData = domResult.domData;
           console.log('✅ Railway DOM data received:', railwayDOMData);
+          console.log('🔧 Railway DOM errors (mapped):', railwayDOMData.dom_errors);
+          console.log('🔧 Railway crawl impact (mapped):', railwayDOMData.crawl_impact);
         } else {
           console.log('⚠️ Railway failed, using PageSpeed API only');
           analysisMethod = 'FALLBACK_PAGESPEED_ONLY';
@@ -101,7 +103,7 @@ export default function CompetitiveBenchmarkDashboard() {
         // Page size from PageSpeed API
         page_size_mb: pagespeedData.page_size_mb,
         
-        // Crawl impact
+        // Crawl impact - 🔧 FIX: Use mapped crawl_impact from Railway API
         crawl_impact: railwayDOMData ? railwayDOMData.crawl_impact : calculateCrawlImpact(pagespeedData.page_size_mb, 0, 0),
         
         // Metadata
