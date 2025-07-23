@@ -462,8 +462,7 @@ export default function LighthouseDOMAnalyzer() {
 
   // Generate competitive analysis dashboard
   const generateCompetitiveAnalysis = () => {
-    if (results.length === 0 || competitorResults.length === 0) return null;
-
+  if (results.length === 0 || competitorResults.length === 0 || isRunningCompetitors) return null;
     const myResult = results[0];
     if (myResult.status === 'error') return null;
 
