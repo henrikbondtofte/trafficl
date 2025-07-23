@@ -21,7 +21,7 @@ export default function LighthouseDOMAnalyzer() {
     return apiKey && apiKey.trim().length > 0;
   };
 
-  // Test API key function
+  // 🔧 FIXED Test API key function
   const testApiKey = async () => {
     if (!apiKey.trim()) {
       alert('❌ Please enter an API key first');
@@ -32,14 +32,19 @@ export default function LighthouseDOMAnalyzer() {
     setTestStatus('Testing...');
     
     try {
-      console.log('🧪 Testing API key:', apiKey.substring(0, 10) + '...');
-      console.log('🧪 Full key length:', apiKey.trim().length);
+      console.log('🧪 Testing API key...');
       
+      // 🔥 SIMPLE API TEST - NO ENCODING ISSUES
+      const testUrl = 'https://example.com'; // Simple URL instead of google.com
       const testResponse = await fetch(
-        `https://www.googleapis.com/pagespeedonline/v5/runPagespeed?url=${encodeURIComponent('https://www.google.com')}&strategy=mobile&key=${encodeURIComponent(apiKey.trim())}`
+        `https://www.googleapis.com/pagespeedonline/v5/runPagespeed?url=${testUrl}&strategy=mobile&key=${apiKey.trim()}`
       );
       
       console.log('🔍 API Test Response status:', testResponse.status);
+      
+      if (!testResponse.ok) {
+        throw new Error(`HTTP ${testResponse.status}: ${testResponse.statusText}`);
+      }
       
       const testData = await testResponse.json();
       console.log('🔍 API Test Response:', testData);
@@ -47,16 +52,16 @@ export default function LighthouseDOMAnalyzer() {
       if (testData.error) {
         console.error('❌ API Error Details:', testData.error);
         setTestStatus(`❌ Failed: ${testData.error.message}`);
-        alert(`❌ API Key Test Failed!\n\nError: ${testData.error.message}\nCode: ${testData.error.code || 'Unknown'}\n\nDouble-check:\n• API key is correct\n• PageSpeed Insights API is enabled\n• No quota exceeded`);
+        alert(`❌ API Key Test Failed!\n\nError: ${testData.error.message}\nCode: ${testData.error.code || 'Unknown'}`);
       } else {
         console.log('✅ API key test successful!');
         setTestStatus('✅ Working!');
-        alert('✅ API Key is working perfectly!\n\nYou can now test your URLs.\n\n💡 Tip: You can enter URLs without https:// - we\'ll add it automatically!');
+        alert('✅ API Key is working perfectly!\n\nYou can now test your URLs.');
       }
     } catch (error) {
       console.error('🚨 Network error:', error);
       setTestStatus(`❌ Network Error: ${error.message}`);
-      alert(`🚨 Network Error!\n\n${error.message}\n\nCheck your internet connection.`);
+      alert(`🚨 Network Error!\n\n${error.message}`);
     } finally {
       setIsRunning(false);
       setTimeout(() => setTestStatus(''), 3000);
