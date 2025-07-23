@@ -148,32 +148,32 @@ export default function LighthouseDOMAnalyzer() {
     }
   };
 
-  // 🎯 CRAWLABILITY SCORE CALCULATION - Based on Google's thresholds
+  // 🎯 CRAWLABILITY SCORE CALCULATION - Based on Google's thresholds + Railway data
   const calculateCrawlabilityScore = (site) => {
     let score = 100;
     
-    // DOM Errors (critical for crawling)
+    // DOM Errors (critical for crawling) - Railway data preferred
     const domErrors = Math.round(site.dom_errors || 0);
     if (domErrors > 30) score -= 40;
     else if (domErrors > 10) score -= 20;
     else if (domErrors > 5) score -= 10;
     
-    // Max Children (Google threshold: 60+)
+    // Max Children (Google threshold: 60+) - Railway data preferred
     const maxChildren = Math.round(site.max_children || 0);
     if (maxChildren > 60) score -= 30;
     else if (maxChildren > 40) score -= 15;
     
-    // Page Size (crawl budget impact)
+    // Page Size (crawl budget impact) - PageSpeed data
     const pageSize = parseFloat(site.page_size_mb || 0);
     if (pageSize > 3) score -= 25;
     else if (pageSize > 1.5) score -= 10;
     
-    // DOM Nodes
+    // DOM Nodes - Railway data preferred
     const domNodes = Math.round(site.dom_nodes || 0);
     if (domNodes > 1800) score -= 15;
     else if (domNodes > 1200) score -= 8;
     
-    // DOM Depth
+    // DOM Depth - Railway data preferred
     const domDepth = Math.round(site.dom_depth || 0);
     if (domDepth > 32) score -= 10;
     else if (domDepth > 25) score -= 5;
@@ -181,22 +181,18 @@ export default function LighthouseDOMAnalyzer() {
     return Math.max(0, score);
   };
 
-  // 📈 GENERATE COMPETITIVE ANALYSIS - Data processing
+  // 📈 GENERATE COMPETITIVE ANALYSIS - Data processing for lighthouse-dom API
   const generateCompetitiveAnalysis = () => {
-    // Work with competitors only or include main site if available
-    if (competitorResults.length === 0 || isRunningCompetitors) return null;
+    if (results.length === 0 || competitorResults.length === 0) return null;
+    
+    const yourSite = results[0];
+    if (yourSite.status === 'error') return null;
     
     const validCompetitors = competitorResults.filter(comp => comp.status === 'success');
     if (validCompetitors.length === 0) return null;
     
-    // Check if we have main site results
-    let allSites = [...validCompetitors];
-    let yourSite = null;
-    
-    if (results.length > 0 && results[0].status === 'success') {
-      yourSite = results[0];
-      allSites = [yourSite, ...validCompetitors];
-    }
+    // Combine all sites with your site first
+    const allSites = [yourSite, ...validCompetitors];
     
     // Calculate crawlability scores and add hostname
     const sitesWithScores = allSites.map(site => ({
@@ -214,7 +210,7 @@ export default function LighthouseDOMAnalyzer() {
       ranked_sites: rankedSites,
       winner: rankedSites[0],
       loser: rankedSites[rankedSites.length - 1],
-      your_rank: yourSite ? rankedSites.findIndex(site => site.url === yourSite.url) + 1 : null
+      your_rank: rankedSites.findIndex(site => site.url === yourSite.url) + 1
     };
   };
 
@@ -338,7 +334,7 @@ export default function LighthouseDOMAnalyzer() {
     }
   };
 
-  // 🏆 COMPETITIVE ANALYSIS DASHBOARD - The perfect executive overview
+  // 🏆 COMPETITIVE ANALYSIS DASHBOARD - The perfect executive overview with Railway + PageSpeed data
   const CompetitiveAnalysisDashboard = ({ analysis }) => {
     if (!analysis) return null;
     
