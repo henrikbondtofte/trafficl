@@ -1,4 +1,4 @@
-// 🔥 VERCEL API - RAILWAY PROXY ONLY
+// 🔥 VERCEL API - RAILWAY PROXY ONLY - FIXED MAPPING
 // File: /pages/api/lighthouse-dom.js  
 // ONLY calls Railway for DOM data - PageSpeed handled by frontend
 
@@ -63,14 +63,41 @@ export default async function handler(req, res) {
       console.log('📦 Railway raw result:', railwayResult);
       
       if (railwayResult.success && railwayResult.domData) {
-        railwayDOMData = railwayResult.domData;
+        const rawData = railwayResult.domData;
+        
+        // 🔧 FIX MAPPING: Transform Railway data to expected format
+        railwayDOMData = {
+          // Core DOM structure (✅ already correct)
+          dom_nodes: rawData.dom_nodes,
+          dom_depth: rawData.dom_depth,
+          max_children: rawData.max_children,
+          crawlability_score: rawData.crawlability_score,
+          crawlability_risk: rawData.crawlability_risk,
+          google_lighthouse_version: rawData.google_lighthouse_version,
+          
+          // 🔧 FIX: Map crawlability_penalties to dom_errors count
+          dom_errors: rawData.crawlability_penalties?.length || 0,
+          
+          // 🔧 FIX: Keep original penalties for detailed analysis
+          crawlability_penalties: rawData.crawlability_penalties || [],
+          
+          // 🔧 FIX: Map crawlability_risk to crawl_impact
+          crawl_impact: rawData.crawlability_risk || 'UNKNOWN',
+          
+          // Additional fields for compatibility
+          analysis_timestamp: rawData.analysis_timestamp,
+          url: fullUrl
+        };
+        
         domDataSource = 'RAILWAY_LIGHTHOUSE_CLI';
-        console.log('✅ Railway DOM data received:', {
+        console.log('✅ Railway DOM data received and mapped:', {
           nodes: railwayDOMData.dom_nodes,
           depth: railwayDOMData.dom_depth,
           children: railwayDOMData.max_children,
           score: railwayDOMData.crawlability_score,
-          risk: railwayDOMData.crawlability_risk
+          risk: railwayDOMData.crawlability_risk,
+          errors: railwayDOMData.dom_errors, // ← Fixed mapping!
+          penalties: railwayDOMData.crawlability_penalties?.length || 0
         });
       } else {
         console.log('⚠️ Railway analysis failed:', railwayResult.error || 'No domData in response');
@@ -94,9 +121,11 @@ export default async function handler(req, res) {
       }
     }
     
-    // RETURN RAILWAY DATA ONLY
+    // RETURN RAILWAY DATA ONLY - WITH FIXED MAPPING
     if (railwayDOMData) {
-      console.log('✅ Returning Railway DOM data to frontend');
+      console.log('✅ Returning mapped Railway DOM data to frontend');
+      console.log('🔧 Mapped dom_errors:', railwayDOMData.dom_errors);
+      console.log('🔧 Mapped crawl_impact:', railwayDOMData.crawl_impact);
       
       res.status(200).json({
         success: true,
