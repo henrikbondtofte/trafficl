@@ -808,7 +808,71 @@ export default function LighthouseDOMAnalyzer() {
       )}
 
       {/* Competitive Analysis Dashboard */}
-    {competitorResults.length > 0 && <CompetitiveAnalysisDashboard analysis={generateCompetitiveAnalysis()} />}
+   {/* 🔥 FORCE COMPETITIVE DASHBOARD - FIXED */}
+{competitorResults.length > 0 && !isRunningCompetitors && (
+  <div className="bg-gradient-to-r from-purple-50 to-pink-50 border-2 border-purple-300 rounded-lg p-6 mb-8">
+    <h2 className="text-2xl font-bold text-purple-900 mb-6">🏆 Competitive Intelligence Dashboard</h2>
+    
+    {/* Quick Competitive Overview */}
+    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+      <div className="bg-white p-4 rounded-lg shadow-sm">
+        <h3 className="text-sm font-medium text-gray-600 mb-2">Competitors Analyzed</h3>
+        <div className="text-3xl font-bold text-blue-600">{competitorResults.filter(c => c.status === 'success').length}</div>
+        <div className="text-sm text-gray-500">Successfully analyzed</div>
+      </div>
+      
+      <div className="bg-white p-4 rounded-lg shadow-sm">
+        <h3 className="text-sm font-medium text-gray-600 mb-2">Average Performance</h3>
+        <div className="text-3xl font-bold text-green-600">
+          {Math.round(competitorResults.filter(c => c.status === 'success').reduce((sum, comp) => sum + comp.performance_mobile, 0) / competitorResults.filter(c => c.status === 'success').length) || 0}
+        </div>
+        <div className="text-sm text-gray-500">Mobile score</div>
+      </div>
+      
+      <div className="bg-white p-4 rounded-lg shadow-sm">
+        <h3 className="text-sm font-medium text-gray-600 mb-2">Best Max Children</h3>
+        <div className="text-3xl font-bold text-orange-600">
+          {Math.min(...competitorResults.filter(c => c.status === 'success').map(c => c.max_children)) || 'N/A'}
+        </div>
+        <div className="text-sm text-gray-500">Lowest complexity</div>
+      </div>
+    </div>
+
+    {/* Competitive Leaderboard */}
+    <div className="bg-white rounded-lg p-4">
+      <h3 className="text-lg font-semibold text-gray-900 mb-4">🏆 Performance Leaderboard</h3>
+      <div className="space-y-2">
+        {competitorResults
+          .filter(site => site.status === 'success')
+          .sort((a, b) => b.performance_mobile - a.performance_mobile)
+          .map((site, index) => (
+            <div key={site.url} className="flex items-center justify-between p-3 rounded-lg bg-gray-50">
+              <div className="flex items-center gap-3">
+                <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ${
+                  index === 0 ? 'bg-yellow-400 text-yellow-900' :
+                  index === 1 ? 'bg-gray-300 text-gray-700' :
+                  index === 2 ? 'bg-orange-300 text-orange-900' :
+                  'bg-gray-200 text-gray-600'
+                }`}>
+                  #{index + 1}
+                </div>
+                <div>
+                  <div className="font-medium text-gray-900">{new URL(site.url).hostname}</div>
+                  <div className="text-sm text-gray-500">
+                    {site.dom_nodes?.toLocaleString()} nodes • {site.max_children} max children • {site.page_size_mb}MB
+                  </div>
+                </div>
+              </div>
+              <div className="text-right">
+                <div className="text-xl font-bold text-blue-600">{site.performance_mobile}</div>
+                <div className="text-sm text-gray-500">Mobile Score</div>
+              </div>
+            </div>
+          ))}
+      </div>
+    </div>
+  </div>
+)}
 
       {/* Results Section */}
       {results.length > 0 && (
