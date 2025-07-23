@@ -535,29 +535,173 @@ export default function CompetitiveBenchmarkDashboard() {
             </div>
           </div>
 
-          {/* Your Position */}
-          <div className={`p-6 rounded-xl border-2 ${
-            analysis.yourRank === 1 ? 'bg-green-50 border-green-300' :
-            analysis.yourRank <= 2 ? 'bg-yellow-50 border-yellow-300' :
-            'bg-red-50 border-red-300'
+          {/* Your Position - UPDATED with Traffic Light Colors */}
+          <div className={`p-6 rounded-xl border-4 shadow-lg ${
+            analysis.yourRank === 1 ? 'bg-green-50 border-green-500' :
+            analysis.yourRank <= 2 ? 'bg-yellow-50 border-yellow-500' :
+            'bg-red-50 border-red-500'
           }`}>
             <div className="text-center">
-              <div className="text-2xl font-bold mb-2">
-                YOUR SITE RANKS #{analysis.yourRank} OF {analysis.ranked.length}
+              <div className="text-3xl font-bold mb-3 flex items-center justify-center gap-3">
+                {analysis.yourRank === 1 && <span className="text-4xl">🥇</span>}
+                {analysis.yourRank === 2 && <span className="text-4xl">🥈</span>}
+                {analysis.yourRank === 3 && <span className="text-4xl">🥉</span>}
+                {analysis.yourRank > 3 && <span className="text-4xl">📍</span>}
+                <span className={analysis.yourRank === 1 ? 'text-green-800' : analysis.yourRank <= 2 ? 'text-yellow-800' : 'text-red-800'}>
+                  YOUR SITE RANKS #{analysis.yourRank} OF {analysis.ranked.length}
+                </span>
               </div>
-              <div className="text-lg">
-                Benchmark Score: <span className="font-bold">{analysis.yourSite.benchmark_score}/100</span>
+              <div className={`text-xl mb-4 inline-block px-6 py-3 rounded-full font-bold ${
+                analysis.yourRank === 1 ? 'bg-green-200 text-green-800' :
+                analysis.yourRank <= 2 ? 'bg-yellow-200 text-yellow-800' :
+                'bg-red-200 text-red-800'
+              }`}>
+                Benchmark Score: <span className="text-2xl">{analysis.yourSite.benchmark_score}/100</span>
               </div>
-              {analysis.yourRank === 1 && <div className="text-green-700 font-bold mt-2">🥇 You're the benchmark champion!</div>}
+              {analysis.yourRank === 1 && <div className="text-green-700 font-bold text-lg mt-2">🎉 You're the benchmark champion!</div>}
               {analysis.yourRank > 1 && (
-                <div className="text-red-700 font-bold mt-2">
+                <div className={`font-bold text-lg mt-2 ${analysis.yourRank <= 2 ? 'text-yellow-700' : 'text-red-700'}`}>
                   ⚠️ {analysis.winner.benchmark_score - analysis.yourSite.benchmark_score} points behind the leader
                 </div>
               )}
             </div>
           </div>
 
-          {/* Detailed Comparison Table */}
+          {/* DEVELOPER ERROR LOG - NEW SECTION */}
+          <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border-4 border-blue-400 rounded-lg shadow-lg">
+            <div className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white p-4">
+              <h3 className="text-xl font-bold text-center flex items-center justify-center gap-2">
+                🔧 DEVELOPER ERROR LOG - {analysis.yourSite.hostname}
+              </h3>
+              <p className="text-center text-sm mt-1">Detailed crawlability issues for your development team</p>
+            </div>
+            
+            <div className="p-6">
+              {/* Railway Error Details */}
+              {analysis.yourSite.crawlability_penalties && analysis.yourSite.crawlability_penalties.length > 0 ? (
+                <div className="mb-6">
+                  <h4 className="text-lg font-bold text-red-700 mb-4 flex items-center gap-2">
+                    🚨 Railway Lighthouse Issues ({analysis.yourSite.crawlability_penalties.length} found)
+                  </h4>
+                  <div className="space-y-3">
+                    {analysis.yourSite.crawlability_penalties.map((penalty, idx) => (
+                      <div key={idx} className="bg-red-50 border-l-4 border-red-500 p-4 rounded-lg">
+                        <div className="flex items-start gap-3">
+                          <AlertCircle className="text-red-500 mt-0.5" size={20} />
+                          <div>
+                            <div className="font-bold text-red-800">{penalty}</div>
+                            <div className="text-sm text-red-600 mt-1">
+                              {penalty.includes('DOM nodes') && '→ Consider reducing total HTML elements on the page'}
+                              {penalty.includes('Image') && '→ Check image loading, compression, and lazy loading implementation'}
+                              {penalty.includes('budget exceeded') && '→ Optimize resource loading and reduce page weight'}
+                              {penalty.includes('render') && '→ Fix rendering blocking resources and JavaScript execution'}
+                              {penalty.includes('gathering') && '→ Optimize resource delivery and network requests'}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <div className="mb-6">
+                  <h4 className="text-lg font-bold text-green-700 mb-3 flex items-center gap-2">
+                    ✅ Railway Lighthouse Analysis
+                  </h4>
+                  <div className="bg-green-50 border-l-4 border-green-500 p-4 rounded-lg">
+                    <div className="flex items-center gap-3">
+                      <CheckCircle className="text-green-500" size={20} />
+                      <span className="text-green-800 font-medium">No critical crawlability penalties detected by Railway</span>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Critical Thresholds Summary */}
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div className={`p-4 rounded-lg border-2 ${(analysis.yourSite.max_children || 0) > 60 ? 'bg-red-50 border-red-400' : 'bg-green-50 border-green-400'}`}>
+                  <div className="text-center">
+                    <div className="text-sm text-gray-600">Max Children</div>
+                    <div className={`text-2xl font-bold ${(analysis.yourSite.max_children || 0) > 60 ? 'text-red-600' : 'text-green-600'}`}>
+                      {analysis.yourSite.max_children || 0}
+                    </div>
+                    <div className="text-xs mt-1">
+                      {(analysis.yourSite.max_children || 0) > 60 ? '🚨 Exceeds Google limit (60)' : '✅ Within Google limit'}
+                    </div>
+                  </div>
+                </div>
+
+                <div className={`p-4 rounded-lg border-2 ${(analysis.yourSite.dom_nodes || 0) > 1800 ? 'bg-red-50 border-red-400' : (analysis.yourSite.dom_nodes || 0) > 1200 ? 'bg-yellow-50 border-yellow-400' : 'bg-green-50 border-green-400'}`}>
+                  <div className="text-center">
+                    <div className="text-sm text-gray-600">DOM Nodes</div>
+                    <div className={`text-2xl font-bold ${(analysis.yourSite.dom_nodes || 0) > 1800 ? 'text-red-600' : (analysis.yourSite.dom_nodes || 0) > 1200 ? 'text-yellow-600' : 'text-green-600'}`}>
+                      {(analysis.yourSite.dom_nodes || 0).toLocaleString()}
+                    </div>
+                    <div className="text-xs mt-1">
+                      {(analysis.yourSite.dom_nodes || 0) > 1800 ? '🚨 Critical' : (analysis.yourSite.dom_nodes || 0) > 1200 ? '⚠️ Warning' : '✅ Good'}
+                    </div>
+                  </div>
+                </div>
+
+                <div className={`p-4 rounded-lg border-2 ${(analysis.yourSite.page_size_mb || 0) > 3 ? 'bg-red-50 border-red-400' : (analysis.yourSite.page_size_mb || 0) > 1.5 ? 'bg-yellow-50 border-yellow-400' : 'bg-green-50 border-green-400'}`}>
+                  <div className="text-center">
+                    <div className="text-sm text-gray-600">Page Size</div>
+                    <div className={`text-2xl font-bold ${(analysis.yourSite.page_size_mb || 0) > 3 ? 'text-red-600' : (analysis.yourSite.page_size_mb || 0) > 1.5 ? 'text-yellow-600' : 'text-green-600'}`}>
+                      {(analysis.yourSite.page_size_mb || 0).toFixed(1)}MB
+                    </div>
+                    <div className="text-xs mt-1">
+                      {(analysis.yourSite.page_size_mb || 0) > 3 ? '🚨 Heavy' : (analysis.yourSite.page_size_mb || 0) > 1.5 ? '⚠️ Moderate' : '✅ Light'}
+                    </div>
+                  </div>
+                </div>
+
+                <div className={`p-4 rounded-lg border-2 ${(analysis.yourSite.dom_errors || 0) > 10 ? 'bg-red-50 border-red-400' : (analysis.yourSite.dom_errors || 0) > 5 ? 'bg-yellow-50 border-yellow-400' : 'bg-green-50 border-green-400'}`}>
+                  <div className="text-center">
+                    <div className="text-sm text-gray-600">DOM Errors</div>
+                    <div className={`text-2xl font-bold ${(analysis.yourSite.dom_errors || 0) > 10 ? 'text-red-600' : (analysis.yourSite.dom_errors || 0) > 5 ? 'text-yellow-600' : 'text-green-600'}`}>
+                      {analysis.yourSite.dom_errors || 0}
+                    </div>
+                    <div className="text-xs mt-1">
+                      {(analysis.yourSite.dom_errors || 0) > 10 ? '🚨 Critical' : (analysis.yourSite.dom_errors || 0) > 5 ? '⚠️ Warning' : '✅ Good'}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Developer Actions */}
+              <div className="mt-6 bg-blue-50 border border-blue-200 rounded-lg p-4">
+                <h4 className="font-bold text-blue-800 mb-3">💡 Quick Developer Actions:</h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+                  {(analysis.yourSite.max_children || 0) > 60 && (
+                    <div className="flex items-start gap-2">
+                      <div className="text-red-500 font-bold">🔧</div>
+                      <div>Reduce parent elements with 60+ children (current: {analysis.yourSite.max_children})</div>
+                    </div>
+                  )}
+                  {(analysis.yourSite.dom_nodes || 0) > 1800 && (
+                    <div className="flex items-start gap-2">
+                      <div className="text-red-500 font-bold">🔧</div>
+                      <div>Optimize DOM structure - consider lazy loading for {(analysis.yourSite.dom_nodes || 0) - 1800}+ excess nodes</div>
+                    </div>
+                  )}
+                  {(analysis.yourSite.page_size_mb || 0) > 3 && (
+                    <div className="flex items-start gap-2">
+                      <div className="text-red-500 font-bold">🔧</div>
+                      <div>Compress resources - page is {((analysis.yourSite.page_size_mb || 0) - 3).toFixed(1)}MB over recommended limit</div>
+                    </div>
+                  )}
+                  {(analysis.yourSite.dom_errors || 0) > 5 && (
+                    <div className="flex items-start gap-2">
+                      <div className="text-red-500 font-bold">🔧</div>
+                      <div>Review Railway penalties above - fix {analysis.yourSite.dom_errors} critical issues</div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Detailed Comparison Table - UPDATED colors */}
           <div className="bg-white rounded-lg shadow-sm border overflow-hidden">
             <div className="bg-gradient-to-r from-blue-600 to-purple-600 text-white p-4">
               <h3 className="text-xl font-bold text-center">📊 DETAILED BENCHMARK COMPARISON</h3>
@@ -697,7 +841,7 @@ export default function CompetitiveBenchmarkDashboard() {
             
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               {/* Your Site Status */}
-              <div className="bg-white p-4 rounded-lg border">
+              <div className="bg-white p-4 rounded-lg border shadow-sm">
                 <h4 className="font-bold text-blue-700 mb-3">🏠 Your Site Status</h4>
                 <div className="space-y-2 text-sm">
                   <div className="flex justify-between">
@@ -711,14 +855,14 @@ export default function CompetitiveBenchmarkDashboard() {
                   <div className="flex justify-between">
                     <span>Points to #1:</span>
                     <span className="font-bold text-red-600">
-                      {analysis.winner.benchmark_score - analysis.yourSite.benchmark_score}
+                      {Math.max(0, analysis.winner.benchmark_score - analysis.yourSite.benchmark_score)}
                     </span>
                   </div>
                 </div>
               </div>
 
               {/* Biggest Opportunity */}
-              <div className="bg-white p-4 rounded-lg border">
+              <div className="bg-white p-4 rounded-lg border shadow-sm">
                 <h4 className="font-bold text-green-700 mb-3">🎯 Biggest Opportunity</h4>
                 <div className="space-y-2 text-sm">
                   {(analysis.yourSite.dom_errors || 0) > 10 && (
@@ -744,26 +888,29 @@ export default function CompetitiveBenchmarkDashboard() {
                 </div>
               </div>
 
-              {/* Competitive Gap */}
-              <div className="bg-white p-4 rounded-lg border">
+              {/* Competitive Gap - FIXED NaN */}
+              <div className="bg-white p-4 rounded-lg border shadow-sm">
                 <h4 className="font-bold text-purple-700 mb-3">🥊 Competitive Gap</h4>
                 <div className="space-y-2 text-sm">
                   <div className="flex justify-between">
                     <span>Best competitor:</span>
                     <span className="font-bold text-green-600">
-                      {Math.max(...analysis.competitors.map(c => c.benchmark_score))}
+                      {analysis.competitors.length > 0 ? Math.max(...analysis.competitors.map(c => c.benchmark_score || 0)) : 'N/A'}
                     </span>
                   </div>
                   <div className="flex justify-between">
                     <span>Worst competitor:</span>
                     <span className="font-bold text-red-600">
-                      {Math.min(...analysis.competitors.map(c => c.benchmark_score))}
+                      {analysis.competitors.length > 0 ? Math.min(...analysis.competitors.map(c => c.benchmark_score || 0)) : 'N/A'}
                     </span>
                   </div>
                   <div className="flex justify-between">
                     <span>Your advantage:</span>
                     <span className="font-bold text-blue-600">
-                      +{analysis.yourSite.benchmark_score - Math.min(...analysis.competitors.map(c => c.benchmark_score))} vs worst
+                      {analysis.competitors.length > 0 ? 
+                        `+${Math.max(0, analysis.yourSite.benchmark_score - Math.min(...analysis.competitors.map(c => c.benchmark_score || 0)))} vs worst` : 
+                        'No competitors'
+                      }
                     </span>
                   </div>
                 </div>
