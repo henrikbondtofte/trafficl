@@ -23,108 +23,15 @@ export default function LighthouseDOMAnalyzer() {
     combined: 'idle'
   });
 
-  // 🔥 COMBINE DATA WHEN BOTH READY - HONEY POT APPROACH
-  useEffect(() => {
-    if (analysisStatus.pagespeed === 'success' && analysisStatus.railway === 'success' && pagespeedData && railwayData) {
-      console.log('🎯 COMBINING DATA - Both sources ready!');
-      
-      // Combine PageSpeed + Railway data
-      const combinedResult = {
-        url: pagespeedData.url,
-        
-        // Performance from PageSpeed  
-        performance_mobile: pagespeedData.performance_mobile,
-        performance_desktop: pagespeedData.performance_desktop,
-        accessibility: pagespeedData.accessibility,
-        best_practices: pagespeedData.best_practices,
-        seo: pagespeedData.seo,
-        
-        // DOM data prioritize Railway over PageSpeed
-        dom_nodes: railwayData.dom_nodes || pagespeedData.raw_data.dom_nodes,
-        dom_depth: railwayData.dom_depth || pagespeedData.raw_data.dom_depth,
-        max_children: railwayData.max_children || pagespeedData.raw_data.max_children,
-        dom_errors: (railwayData.dom_issues_count || 0) + (pagespeedData.raw_data.dom_errors || 0),
-        
-        // Page size from PageSpeed
-        page_size_mb: pagespeedData.raw_data.page_size_mb,
-        
-        // Resource breakdown from PageSpeed
-        resource_breakdown: pagespeedData.raw_data.resource_breakdown,
-        
-        // Performance metrics from PageSpeed
-        performance_metrics: pagespeedData.raw_data.performance_metrics,
-        
-        // Crawl impact from Railway or PageSpeed
-        crawl_impact: railwayData.crawlability_risk || pagespeedData.raw_data.crawl_impact,
-        
-        // Analysis metadata
-        analysis_method: 'HYBRID',
-        data_sources: ['PageSpeed Insights API', 'Railway Lighthouse CLI'],
-        lighthouse_version: railwayData.google_lighthouse_version || 'Unknown',
-        
-        // Combined critical issues
-        critical_issues: [
-          ...pagespeedData.raw_data.critical_issues,
-          ...(railwayData.dom_related_issues?.map(issue => `${issue.audit}: ${issue.title}`) || [])
-        ],
-        
-        status: 'success'
-      };
-      
-      console.log('🎉 FINAL COMBINED RESULT:', combinedResult);
-      console.log('🔧 Values check:', {
-        maxChildren: combinedResult.max_children,
-        domNodes: combinedResult.dom_nodes,  
-        pageSize: combinedResult.page_size_mb,
-        resourceTotal: Object.values(combinedResult.resource_breakdown).reduce((a,b) => a+b, 0)
-      });
-      
-      // Store in results and debug
-      setResults([combinedResult]);
-      window.lastCombinedResult = combinedResult;
-      window.lastPageSpeedData = pagespeedData;
-      window.lastRailwayData = railwayData;
-      
-      setAnalysisStatus(prev => ({ ...prev, combined: 'success' }));
-      setIsRunning(false);
-      
-    } else if (analysisStatus.pagespeed === 'success' && analysisStatus.railway === 'error' && pagespeedData) {
-      console.log('⚠️ FALLBACK - Using PageSpeed data only');
-      
-      const fallbackResult = {
-        url: pagespeedData.url,
-        performance_mobile: pagespeedData.performance_mobile,
-        performance_desktop: pagespeedData.performance_desktop,
-        accessibility: pagespeedData.accessibility,
-        best_practices: pagespeedData.best_practices,
-        seo: pagespeedData.seo,
-        
-        // DOM data from PageSpeed only
-        dom_nodes: pagespeedData.raw_data.dom_nodes,
-        dom_depth: pagespeedData.raw_data.dom_depth,
-        max_children: pagespeedData.raw_data.max_children,
-        dom_errors: pagespeedData.raw_data.dom_errors,
-        page_size_mb: pagespeedData.raw_data.page_size_mb,
-        resource_breakdown: pagespeedData.raw_data.resource_breakdown,
-        performance_metrics: pagespeedData.raw_data.performance_metrics,
-        crawl_impact: pagespeedData.raw_data.crawl_impact,
-        critical_issues: pagespeedData.raw_data.critical_issues,
-        
-        analysis_method: 'FALLBACK_PAGESPEED_ONLY',
-        data_sources: ['PageSpeed Insights API'],
-        status: 'success'
-      };
-      
-      console.log('📄 FALLBACK RESULT:', fallbackResult);
-      setResults([fallbackResult]);
-      setAnalysisStatus(prev => ({ ...prev, combined: 'success' }));
-      setIsRunning(false);
-    }
-  }, [analysisStatus, pagespeedData, railwayData]);
-
   // Check if API key is ready
   const isApiKeyReady = () => {
     return apiKey && apiKey.trim().length > 0;
+  };
+
+  // Helper function to open Google PageSpeed Insights
+  const openGooglePageSpeed = (url) => {
+    const googleUrl = `https://pagespeed.web.dev/report?url=${encodeURIComponent(url)}`;
+    window.open(googleUrl, '_blank');
   };
 
   // Helper function to ensure URL has protocol
@@ -137,7 +44,7 @@ export default function LighthouseDOMAnalyzer() {
     return `https://${trimmedUrl}`;
   };
 
-  // Safe value extraction from API objects - FIXES REACT ERROR #31
+  // Safe value extraction from API objects
   const safeExtractValue = (apiObject) => {
     if (typeof apiObject === 'number') return apiObject;
     if (typeof apiObject === 'string') return parseFloat(apiObject) || 0;
@@ -156,7 +63,7 @@ export default function LighthouseDOMAnalyzer() {
     return '';
   };
 
-  // Extract real DOM data from Lighthouse API response - FIXED
+  // Extract real DOM data from Lighthouse API response
   const extractRealDOMDataFromPageSpeed = (lighthouseResult) => {
     const audits = lighthouseResult.audits;
     
@@ -336,7 +243,52 @@ export default function LighthouseDOMAnalyzer() {
         lighthouse_result: mobileData.lighthouseResult,
         raw_data: extractRealDOMDataFromPageSpeed(mobileData.lighthouseResult),
         timestamp: Date.now()
-      // 🔥 COMBINE DATA WHEN BOTH READY - HONEY POT APPROACH
+      };
+      
+      console.log('✅ PageSpeed data extracted:', extractedData);
+      setPagespeedData(extractedData);
+      setAnalysisStatus(prev => ({ ...prev, pagespeed: 'success' }));
+      
+    } catch (error) {
+      console.error('❌ PageSpeed error:', error);
+      setAnalysisStatus(prev => ({ ...prev, pagespeed: 'error' }));
+      setPagespeedData({ error: error.message, url: fullUrl });
+    }
+  };
+
+  // 🔥 SEPARATE RAILWAY DATA FETCH  
+  const fetchRailwayData = async (url) => {
+    const fullUrl = ensureProtocol(url);
+    
+    try {
+      console.log('🚀 Fetching Railway data for:', fullUrl);
+      setAnalysisStatus(prev => ({ ...prev, railway: 'loading' }));
+      
+      const railwayResponse = await fetch('/api/lighthouse-dom', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: fullUrl })
+      });
+      
+      const railwayResult = await railwayResponse.json();
+      console.log('📦 Railway response:', railwayResult);
+      
+      if (railwayResult.success && railwayResult.domData) {
+        console.log('✅ Railway data extracted:', railwayResult.domData);
+        setRailwayData(railwayResult.domData);
+        setAnalysisStatus(prev => ({ ...prev, railway: 'success' }));
+      } else {
+        throw new Error(railwayResult.error || 'No Railway data');
+      }
+      
+    } catch (error) {
+      console.error('❌ Railway error:', error);
+      setAnalysisStatus(prev => ({ ...prev, railway: 'error' }));
+      setRailwayData({ error: error.message, url: fullUrl });
+    }
+  };
+
+  // 🔥 COMBINE DATA WHEN BOTH READY - HONEY POT APPROACH
   useEffect(() => {
     if (analysisStatus.pagespeed === 'success' && analysisStatus.railway === 'success' && pagespeedData && railwayData) {
       console.log('🎯 COMBINING DATA - Both sources ready!');
@@ -435,60 +387,6 @@ export default function LighthouseDOMAnalyzer() {
     }
   }, [analysisStatus, pagespeedData, railwayData]);
 
-  // Check if API key is ready
-  const isApiKeyReady = () => {
-    return apiKey && apiKey.trim().length > 0;
-  };
-
-  // Helper function to open Google PageSpeed Insights
-  const openGooglePageSpeed = (url) => {
-    const googleUrl = `https://pagespeed.web.dev/report?url=${encodeURIComponent(url)}`;
-    window.open(googleUrl, '_blank');
-  };
-      
-      console.log('✅ PageSpeed data extracted:', extractedData);
-      setPagespeedData(extractedData);
-      setAnalysisStatus(prev => ({ ...prev, pagespeed: 'success' }));
-      
-    } catch (error) {
-      console.error('❌ PageSpeed error:', error);
-      setAnalysisStatus(prev => ({ ...prev, pagespeed: 'error' }));
-      setPagespeedData({ error: error.message, url: fullUrl });
-    }
-  };
-
-  // 🔥 SEPARATE RAILWAY DATA FETCH  
-  const fetchRailwayData = async (url) => {
-    const fullUrl = ensureProtocol(url);
-    
-    try {
-      console.log('🚀 Fetching Railway data for:', fullUrl);
-      setAnalysisStatus(prev => ({ ...prev, railway: 'loading' }));
-      
-      const railwayResponse = await fetch('/api/lighthouse-dom', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: fullUrl })
-      });
-      
-      const railwayResult = await railwayResponse.json();
-      console.log('📦 Railway response:', railwayResult);
-      
-      if (railwayResult.success && railwayResult.domData) {
-        console.log('✅ Railway data extracted:', railwayResult.domData);
-        setRailwayData(railwayResult.domData);
-        setAnalysisStatus(prev => ({ ...prev, railway: 'success' }));
-      } else {
-        throw new Error(railwayResult.error || 'No Railway data');
-      }
-      
-    } catch (error) {
-      console.error('❌ Railway error:', error);
-      setAnalysisStatus(prev => ({ ...prev, railway: 'error' }));
-      setRailwayData({ error: error.message, url: fullUrl });
-    }
-  };
-
   // Test API key function
   const testApiKey = async () => {
     if (!apiKey.trim()) {
@@ -529,272 +427,6 @@ export default function LighthouseDOMAnalyzer() {
       setIsRunning(false);
       setTimeout(() => setTestStatus(''), 3000);
     }
-  };
-
-  // Helper function to open Google PageSpeed Insights
-  const openGooglePageSpeed = (url) => {
-    const googleUrl = `https://pagespeed.web.dev/report?url=${encodeURIComponent(url)}`;
-    window.open(googleUrl, '_blank');
-  };
-
-  // Toggle audit details
-  const toggleAuditDetails = (resultIndex, auditType) => {
-    const key = `${resultIndex}-${auditType}`;
-    setShowAuditDetails(prev => ({
-      ...prev,
-      [key]: !prev[key]
-    }));
-  };
-
-  // Helper function to ensure URL has protocol
-  const ensureProtocol = (url) => {
-    if (!url) return '';
-    const trimmedUrl = url.trim();
-    if (trimmedUrl.startsWith('http://') || trimmedUrl.startsWith('https://')) {
-      return trimmedUrl;
-    }
-    return `https://${trimmedUrl}`;
-  };
-
-  // Safe value extraction from API objects - FIXES REACT ERROR #31
-  const safeExtractValue = (apiObject) => {
-    if (typeof apiObject === 'number') return apiObject;
-    if (typeof apiObject === 'string') return parseFloat(apiObject) || 0;
-    if (apiObject && typeof apiObject === 'object') {
-      if ('value' in apiObject) return typeof apiObject.value === 'number' ? apiObject.value : 0;
-      if ('numericValue' in apiObject) return typeof apiObject.numericValue === 'number' ? apiObject.numericValue : 0;
-    }
-    return 0;
-  };
-
-  // Safe string extraction from API arrays/objects
-  const safeExtractString = (apiData) => {
-    if (typeof apiData === 'string') return apiData;
-    if (Array.isArray(apiData)) return apiData.filter(item => typeof item === 'string').join(', ');
-    if (apiData && typeof apiData === 'object' && 'title' in apiData) return apiData.title || '';
-    return '';
-  };
-
-  // Extract real DOM data from Lighthouse API response - FIXED FOR REACT ERROR #31
-  const extractRealDOMDataFromPageSpeed = (lighthouseResult) => {
-    const audits = lighthouseResult.audits;
-    
-    // Extract real page size using MULTIPLE methods for accuracy
-    let totalSizeKB = 0;
-    let resourceBreakdown = {
-      html_kb: 0,
-      css_kb: 0,
-      js_kb: 0,
-      images_kb: 0,
-      other_kb: 0
-    };
-
-    // METHOD 1: Try total-byte-weight audit first (most reliable)
-    if (audits['total-byte-weight'] && audits['total-byte-weight'].numericValue) {
-      totalSizeKB = safeExtractValue(audits['total-byte-weight'].numericValue) / 1024;
-      console.log('📦 Using total-byte-weight:', (totalSizeKB / 1024).toFixed(2) + ' MB');
-    }
-
-    // METHOD 2: Always process network requests for breakdown AND better size calculation
-    if (audits['network-requests'] && audits['network-requests'].details && audits['network-requests'].details.items) {
-      const networkRequests = audits['network-requests'].details.items;
-      let networkTotal = 0;
-      let transferTotal = 0;
-      
-      console.log('🌐 Processing', networkRequests.length, 'network requests');
-      
-      networkRequests.forEach((request, index) => {
-        const transferSize = safeExtractValue(request.transferSize || 0);
-        const resourceSize = safeExtractValue(request.resourceSize || 0);
-        
-        networkTotal += resourceSize; // Uncompressed size
-        transferTotal += transferSize; // Compressed/transferred size
-        
-        // Use transferSize for breakdown (actual bytes transferred)
-        const sizeToUse = transferSize;
-        
-        // Categorize by resource type
-        const url = request.url || '';
-        const mimeType = request.mimeType || '';
-        
-        if (mimeType.includes('text/html') || mimeType.includes('html') || url.includes('.html')) {
-          resourceBreakdown.html_kb += sizeToUse / 1024;
-        } else if (mimeType.includes('text/css') || mimeType.includes('css') || url.includes('.css')) {
-          resourceBreakdown.css_kb += sizeToUse / 1024;
-        } else if (mimeType.includes('javascript') || mimeType.includes('js') || url.includes('.js')) {
-          resourceBreakdown.js_kb += sizeToUse / 1024;
-        } else if (mimeType.includes('image/') || url.match(/\.(png|jpg|jpeg|gif|webp|svg|ico)$/i)) {
-          resourceBreakdown.images_kb += sizeToUse / 1024;
-        } else {
-          resourceBreakdown.other_kb += sizeToUse / 1024;
-        }
-        
-        // Debug first few requests
-        if (index < 3) {
-          console.log(`📄 Request ${index}:`, {
-            url: url.substring(0, 50) + '...',
-            mimeType,
-            transferSize: Math.round(transferSize / 1024) + ' KB',
-            resourceSize: Math.round(resourceSize / 1024) + ' KB'
-          });
-        }
-      });
-      
-      // Use the higher of total-byte-weight or network total
-      const networkTotalKB = Math.max(transferTotal, networkTotal) / 1024;
-      if (networkTotalKB > totalSizeKB) {
-        totalSizeKB = networkTotalKB;
-      }
-      
-      console.log('📦 Size calculations:', {
-        totalByteWeight: (totalSizeKB * 1024 / 1024).toFixed(2) + ' MB',
-        networkTransfer: (transferTotal / 1024 / 1024).toFixed(2) + ' MB',
-        networkResource: (networkTotal / 1024 / 1024).toFixed(2) + ' MB',
-        finalSize: (totalSizeKB / 1024).toFixed(2) + ' MB'
-      });
-      
-      console.log('📊 Resource breakdown:', {
-        html: Math.round(resourceBreakdown.html_kb) + ' KB',
-        css: Math.round(resourceBreakdown.css_kb) + ' KB', 
-        js: Math.round(resourceBreakdown.js_kb) + ' KB',
-        images: Math.round(resourceBreakdown.images_kb) + ' KB',
-        other: Math.round(resourceBreakdown.other_kb) + ' KB',
-        total: Math.round(Object.values(resourceBreakdown).reduce((a,b) => a+b, 0)) + ' KB'
-      });
-    }
-
-    // DOM complexity from dom-size audit - EXTRACT CORRECTLY
-    let domNodes = 0;
-    let domDepth = 0;
-    let maxChildren = 0;
-    
-    if (audits['dom-size'] && audits['dom-size'].details && audits['dom-size'].details.items) {
-      const domItems = audits['dom-size'].details.items;
-      
-      console.log('🏗️ Raw DOM size audit data:', domItems);
-      
-      // Try multiple parsing methods - PageSpeed API structure varies
-      if (Array.isArray(domItems) && domItems.length >= 3) {
-        // Method 1: Direct array access
-        const item1 = domItems[0];
-        const item2 = domItems[1]; 
-        const item3 = domItems[2];
-        
-        // Check if items have 'value' property
-        if (item1 && typeof item1.value !== 'undefined') {
-          domNodes = safeExtractValue(item1.value);
-        }
-        if (item2 && typeof item2.value !== 'undefined') {
-          domDepth = safeExtractValue(item2.value);
-        }
-        if (item3 && typeof item3.value !== 'undefined') {
-          maxChildren = safeExtractValue(item3.value);
-        }
-        
-        // If that didn't work, try numericValue
-        if (domNodes === 0 && item1?.numericValue) {
-          domNodes = safeExtractValue(item1.numericValue);
-        }
-        if (domDepth === 0 && item2?.numericValue) {
-          domDepth = safeExtractValue(item2.numericValue);
-        }
-        if (maxChildren === 0 && item3?.numericValue) {
-          maxChildren = safeExtractValue(item3.numericValue);
-        }
-      }
-      
-      // Method 2: Search by statistic name if available
-      domItems.forEach(item => {
-        if (item.statistic === 'Total DOM Elements' || item.statistic === 'Element count') {
-          domNodes = safeExtractValue(item.value || item.numericValue);
-        } else if (item.statistic === 'Maximum DOM Depth' || item.statistic === 'DOM depth') {
-          domDepth = safeExtractValue(item.value || item.numericValue);
-        } else if (item.statistic === 'Maximum Child Elements' || item.statistic === 'Child elements') {
-          maxChildren = safeExtractValue(item.value || item.numericValue);
-        }
-      });
-      
-      console.log('🏗️ DOM extracted from PageSpeed:', {
-        nodes: domNodes,
-        depth: domDepth, 
-        children: maxChildren
-      });
-    }
-    
-    // If PageSpeed DOM extraction failed, try alternative method
-    if (domNodes === 0 && audits['dom-size']?.numericValue) {
-      domNodes = safeExtractValue(audits['dom-size'].numericValue);
-      console.log('🏗️ Using dom-size numericValue as fallback:', domNodes);
-    }
-
-    // Extract performance metrics for DOM analysis - SAFELY
-    const performanceMetrics = {
-      fcp: safeExtractValue(audits['first-contentful-paint']?.numericValue),
-      lcp: safeExtractValue(audits['largest-contentful-paint']?.numericValue),
-      cls: safeExtractValue(audits['cumulative-layout-shift']?.numericValue),
-      tbt: safeExtractValue(audits['total-blocking-time']?.numericValue),
-      speed_index: safeExtractValue(audits['speed-index']?.numericValue)
-    };
-
-    // Count actual audit failures and warnings - SAFELY HANDLED
-    let domErrors = 0;
-    let criticalIssues = [];
-    
-    // Check for critical DOM/rendering issues
-    Object.entries(audits).forEach(([auditKey, audit]) => {
-      const score = safeExtractValue(audit.score);
-      if (score !== null && score < 0.9) {
-        if (auditKey.includes('dom') || 
-            auditKey.includes('render') || 
-            auditKey.includes('layout') ||
-            auditKey.includes('contentful-paint') ||
-            auditKey.includes('blocking')) {
-          domErrors++;
-          const title = safeExtractString(audit.title) || auditKey;
-          criticalIssues.push(`${auditKey}: ${title}`);
-        }
-      }
-    });
-
-    // Calculate crawl impact based on real metrics
-    let crawlImpact = 'LOW';
-    const pageSizeMB = totalSizeKB / 1024;
-    
-    if (pageSizeMB > 4 || domNodes > 1800 || domErrors > 8 || maxChildren > 60) {
-      crawlImpact = 'HIGH';
-    } else if (pageSizeMB > 2 || domNodes > 1200 || domErrors > 4 || maxChildren > 40) {
-      crawlImpact = 'MEDIUM';
-    }
-
-    // Return clean, React-safe object with only primitive values
-    const finalResult = {
-      page_size_mb: Math.round(pageSizeMB * 100) / 100,
-      dom_nodes: Math.round(domNodes) || 0,
-      dom_depth: Math.round(domDepth) || 0,
-      max_children: Math.round(maxChildren) || 0,
-      dom_errors: Math.round(domErrors) || 0,
-      critical_issues: criticalIssues.filter(issue => typeof issue === 'string'),
-      crawl_impact: crawlImpact,
-      performance_metrics: {
-        fcp: Math.round(performanceMetrics.fcp) || 0,
-        lcp: Math.round(performanceMetrics.lcp) || 0,
-        cls: Math.round(performanceMetrics.cls * 1000) / 1000 || 0,
-        tbt: Math.round(performanceMetrics.tbt) || 0,
-        speed_index: Math.round(performanceMetrics.speed_index) || 0
-      },
-      resource_breakdown: {
-        html_kb: Math.round(resourceBreakdown.html_kb) || 0,
-        css_kb: Math.round(resourceBreakdown.css_kb) || 0,
-        js_kb: Math.round(resourceBreakdown.js_kb) || 0,
-        images_kb: Math.round(resourceBreakdown.images_kb) || 0,
-        other_kb: Math.round(resourceBreakdown.other_kb) || 0
-      },
-      data_source: 'PageSpeed API'
-    };
-    
-    console.log('🔧 Final PageSpeed extraction result:', finalResult);
-    
-    return finalResult;
   };
 
   // 🔥 NEW HONEY POT ANALYSIS - PARALLEL DATA FETCHING
@@ -924,25 +556,23 @@ export default function LighthouseDOMAnalyzer() {
     <div className="max-w-7xl mx-auto p-6 bg-white">
       <div className="mb-8">
         <h1 className="text-4xl font-bold text-gray-900 mb-4">
-          🔥 HYBRID Lighthouse DOM Analyzer & Competitor Benchmark
+          🍯 HONEY POT DOM Analyzer & Competitive Intelligence
         </h1>
         <p className="text-gray-600 text-lg">
-          Revolutionary hybrid approach: Fast PageSpeed Insights API + Accurate Lighthouse CLI for REAL DOM data. 
-          NO FAKE DATA - Performance scores from API, DOM structure from CLI.
+          Revolutionary "Honey Pot" approach: Parallel data fetching from PageSpeed API and Railway Lighthouse CLI for maximum speed and accuracy.
         </p>
         
         <div className="mt-4 bg-green-50 border-2 border-green-300 rounded-lg p-4">
           <div className="flex items-center gap-2 mb-2">
-            <div className="text-green-600 text-xl">🔥</div>
-            <strong className="text-green-900">HYBRID ANALYSIS FEATURES:</strong>
+            <div className="text-green-600 text-xl">🍯</div>
+            <strong className="text-green-900">HONEY POT ARCHITECTURE:</strong>
           </div>
           <div className="text-sm text-green-800 space-y-1">
-            <div>• 🚀 <strong>Fast Performance Scores:</strong> PageSpeed Insights API (5-10 seconds)</div>
-            <div>• 🏗️ <strong>REAL DOM Data:</strong> Lighthouse CLI execution (15-30 seconds)</div>
-            <div>• 📊 <strong>Accurate Metrics:</strong> True nodes, depth & children counts</div>
-            <div>• 🔄 <strong>Fallback Protection:</strong> Works even if CLI fails</div>
-            <div>• 🎯 <strong>Google Thresholds:</strong> Official crawlability scoring</div>
-            <div>• 🔍 <strong>Data Source Tags:</strong> See which method provided each metric</div>
+            <div>• ⚡ <strong>Parallel Processing:</strong> PageSpeed + Railway fetch simultaneously</div>
+            <div>• 🎯 <strong>Smart Combination:</strong> Railway DOM data + PageSpeed performance</div>
+            <div>• 📊 <strong>Real-time Status:</strong> See exactly what's happening</div>
+            <div>• 🔄 <strong>Automatic Fallback:</strong> Works even if Railway fails</div>
+            <div>• 🐛 <strong>Full Debug Tools:</strong> Complete data visibility</div>
           </div>
         </div>
       </div>
@@ -998,11 +628,11 @@ export default function LighthouseDOMAnalyzer() {
             className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2"
           >
             <Zap size={20} />
-            {isRunning ? 'Analyzing...' : 'Hybrid Analysis'}
+            {isRunning ? 'Analyzing...' : 'Honey Pot Analysis'}
           </button>
         </div>
         <div className="text-sm text-gray-600">
-          🔥 Hybrid analysis: Fast API performance + Accurate CLI DOM data (15-30 seconds total)
+          🍯 Parallel fetching: PageSpeed API + Railway CLI data combined intelligently
         </div>
       </div>
 
@@ -1019,6 +649,8 @@ export default function LighthouseDOMAnalyzer() {
           Coming Soon
         </button>
       </div>
+
+      {/* Competitor Analysis - TEMPORARILY DISABLED */}
       <div className="bg-orange-50 rounded-lg p-6 mb-8 opacity-50">
         <h2 className="text-xl font-semibold mb-4">🥊 Competitor Analysis</h2>
         <p className="text-sm text-gray-600 mb-4">
@@ -1200,7 +832,7 @@ export default function LighthouseDOMAnalyzer() {
                     <div className="bg-green-50 border-2 border-green-300 rounded-lg p-4 mb-4">
                       <div className="flex items-center gap-2 mb-3">
                         <div className="text-green-600 text-xl">🏗️</div>
-                        <strong className="text-green-900">REAL DOM Structure (Lighthouse CLI)</strong>
+                        <strong className="text-green-900">REAL DOM Structure (Railway CLI + PageSpeed API)</strong>
                       </div>
                       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                         <div className="text-center">
@@ -1226,7 +858,7 @@ export default function LighthouseDOMAnalyzer() {
                         </div>
                         <div className="text-center">
                           <div className="text-2xl font-bold text-green-600">
-                            {result.dom_analysis?.crawlability_score || calculateCrawlabilityScore(result)}
+                            {calculateCrawlabilityScore(result)}
                           </div>
                           <div className="text-sm text-gray-500">Crawl Score</div>
                           <div className="text-xs text-gray-400">/100</div>
@@ -1277,10 +909,10 @@ export default function LighthouseDOMAnalyzer() {
                           <div><strong>Data Sources:</strong> {result.data_sources?.join(', ') || 'PageSpeed API'}</div>
                           <div><strong>Lighthouse Version:</strong> {result.lighthouse_version || 'N/A'}</div>
                           {result.analysis_method === 'HYBRID' && (
-                            <div className="text-green-700 font-semibold">✅ Full hybrid analysis with real DOM data from Lighthouse CLI</div>
+                            <div className="text-green-700 font-semibold">✅ Full hybrid analysis with Railway DOM + PageSpeed performance</div>
                           )}
                           {result.analysis_method === 'FALLBACK_PAGESPEED_ONLY' && (
-                            <div className="text-orange-700 font-semibold">⚠️ Lighthouse CLI unavailable - using PageSpeed API only</div>
+                            <div className="text-orange-700 font-semibold">⚠️ Railway unavailable - using PageSpeed API only</div>
                           )}
                         </div>
                       </div>
@@ -1295,7 +927,7 @@ export default function LighthouseDOMAnalyzer() {
 
       {/* Footer */}
       <div className="bg-gray-50 p-6 rounded-lg mt-8">
-        <h3 className="text-xl font-bold text-gray-900 mb-4">🔥 HONEY POT Data Architecture & Competitive Intelligence</h3>
+        <h3 className="text-xl font-bold text-gray-900 mb-4">🍯 HONEY POT Data Architecture & Competitive Intelligence</h3>
         <p className="mb-4 text-gray-700">
           Revolutionary "Honey Pot" approach: Parallel data fetching from PageSpeed API and Railway Lighthouse CLI, then intelligent combination when both sources are ready.
         </p>
