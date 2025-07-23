@@ -11,7 +11,7 @@ export default function CoreUpdateAnalyzer() {
 
   const parseCSV = (text) => {
     const allLines = text.split('\n');
-    a
+    
     const lines = allLines.filter(line => {
       const trimmed = line.trim();
       return trimmed.length > 0 && !trimmed.startsWith('#');
