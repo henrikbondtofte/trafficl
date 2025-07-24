@@ -579,7 +579,7 @@ export default function CompetitiveBenchmarkDashboard() {
                 analysis.yourRank <= 2 ? 'bg-yellow-200 text-yellow-800' :
                 'bg-red-200 text-red-800'
               }`}>
-                Benchmark Score: <span className="text-2xl">{analysis.yourSite.benchmark_score}/100</span>
+                Benchmark Score: <span className="text-2xl">{analysis.yourSite?.benchmark_score || 0}/100</span>
               </div>
               {analysis.yourRank === 1 && <div className="text-green-700 font-bold text-lg mt-2">🎉 You're the benchmark champion!</div>}
               {analysis.yourRank > 1 && (
