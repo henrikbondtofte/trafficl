@@ -584,7 +584,7 @@ export default function CompetitiveBenchmarkDashboard() {
               {analysis.yourRank === 1 && <div className="text-green-700 font-bold text-lg mt-2">🎉 You're the benchmark champion!</div>}
               {analysis.yourRank > 1 && (
                 <div className={`font-bold text-lg mt-2 ${analysis.yourRank <= 2 ? 'text-yellow-700' : 'text-red-700'}`}>
-                  ⚠️ {analysis.winner.benchmark_score - analysis.yourSite.benchmark_score} points behind the leader
+                  ⚠️ {Math.max(0, (analysis.winner?.benchmark_score || 0) - (analysis.yourSite?.benchmark_score || 0))} points behind the leader
                 </div>
               )}
             </div>
@@ -1048,7 +1048,7 @@ export default function CompetitiveBenchmarkDashboard() {
                   <div className="flex justify-between">
                     <span>Points to #1:</span>
                     <span className="font-bold text-red-600">
-                      {Math.max(0, analysis.winner.benchmark_score - analysis.yourSite.benchmark_score)}
+                      {Math.max(0, (analysis.winner?.benchmark_score || 0) - (analysis.yourSite?.benchmark_score || 0))}
                     </span>
                   </div>
                 </div>
@@ -1109,7 +1109,7 @@ export default function CompetitiveBenchmarkDashboard() {
                     <span>Your advantage:</span>
                     <span className="font-bold text-blue-600">
                       {analysis.competitors.length > 0 ? 
-                        `+${Math.max(0, analysis.yourSite.benchmark_score - Math.min(...analysis.competitors.map(c => c.benchmark_score || 0)))} vs worst` : 
+                        `+${Math.max(0, (analysis.yourSite?.benchmark_score || 0) - Math.min(...analysis.competitors.map(c => c.benchmark_score || 0)))} vs worst` : 
                         'No competitors'
                       }
                     </span>
