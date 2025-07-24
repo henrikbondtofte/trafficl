@@ -70,6 +70,7 @@ export default function CompetitiveBenchmarkDashboard() {
           console.log('✅ Railway DOM data received:', railwayDOMData);
           console.log('🔧 Railway DOM errors (mapped):', railwayDOMData.dom_errors);
           console.log('🔧 Railway crawl impact (mapped):', railwayDOMData.crawl_impact);
+          console.log('🔥 Railway lighthouse_real_errors:', railwayDOMData.lighthouse_real_errors);
         } else {
           console.log('⚠️ Railway failed, using PageSpeed API only');
           analysisMethod = 'FALLBACK_PAGESPEED_ONLY';
@@ -99,6 +100,9 @@ export default function CompetitiveBenchmarkDashboard() {
         dom_depth: railwayDOMData ? railwayDOMData.dom_depth : 0,
         max_children: railwayDOMData ? railwayDOMData.max_children : 0,
         dom_errors: railwayDOMData ? railwayDOMData.dom_errors : pagespeedData.dom_errors,
+        
+        // NEW: Lighthouse Real Errors from Railway
+        lighthouse_real_errors: railwayDOMData ? railwayDOMData.lighthouse_real_errors : null,
         
         // Page size from PageSpeed API
         page_size_mb: pagespeedData.page_size_mb,
@@ -193,7 +197,7 @@ export default function CompetitiveBenchmarkDashboard() {
     // HIGHEST PRIORITY: Real Lighthouse errors (most critical for crawlability)
     const pushNodeFailures = site.lighthouse_real_errors?.dom_pushnode_failures || 0;
     if (pushNodeFailures > 0) {
-      const penalty = Math.min(40, pushNodeFailures / 5); // Up to 40 points penalty
+      const penalty = Math.min(40, pushNodeFailures * 2); // 2 points per failure, max 40
       score -= penalty;
     }
     
@@ -203,7 +207,7 @@ export default function CompetitiveBenchmarkDashboard() {
     
     const resourceTimeouts = site.lighthouse_real_errors?.resource_timeouts?.length || 0;
     if (resourceTimeouts > 0) {
-      const penalty = Math.min(20, resourceTimeouts * 5);
+      const penalty = Math.min(20, resourceTimeouts * 5); // 5 points per timeout, max 20
       score -= penalty;
     }
     
@@ -236,7 +240,7 @@ export default function CompetitiveBenchmarkDashboard() {
     if (domDepth > 32) score -= 8; // Critical
     else if (domDepth > 25) score -= 3; // Warning
     
-    return Math.max(0, score);
+    return Math.max(0, Math.round(score));
   };
 
   // Get status color based on your thresholds
@@ -534,7 +538,7 @@ export default function CompetitiveBenchmarkDashboard() {
               <div className="text-xl font-bold text-green-900 mb-2">{analysis.winner.hostname}</div>
               <div className="text-lg text-green-800 mb-4">Score: {analysis.winner.benchmark_score}/100</div>
               <div className="grid grid-cols-2 gap-2 text-sm">
-                <div>DOM Errors: <span className="font-bold">{analysis.winner.dom_errors || 0}</span></div>
+                <div>PushNode: <span className="font-bold">{analysis.winner.lighthouse_real_errors?.dom_pushnode_failures || 0}</span></div>
                 <div>Max Children: <span className="font-bold">{analysis.winner.max_children || 0}</span></div>
                 <div>Page Size: <span className="font-bold">{(analysis.winner.page_size_mb || 0).toFixed(1)}MB</span></div>
                 <div>DOM Nodes: <span className="font-bold">{(analysis.winner.dom_nodes || 0).toLocaleString()}</span></div>
@@ -546,7 +550,7 @@ export default function CompetitiveBenchmarkDashboard() {
               <div className="text-xl font-bold text-red-900 mb-2">{analysis.loser.hostname}</div>
               <div className="text-lg text-red-800 mb-4">Score: {analysis.loser.benchmark_score}/100</div>
               <div className="grid grid-cols-2 gap-2 text-sm">
-                <div>DOM Errors: <span className="font-bold">{analysis.loser.dom_errors || 0}</span></div>
+                <div>PushNode: <span className="font-bold">{analysis.loser.lighthouse_real_errors?.dom_pushnode_failures || 0}</span></div>
                 <div>Max Children: <span className="font-bold">{analysis.loser.max_children || 0}</span></div>
                 <div>Page Size: <span className="font-bold">{(analysis.loser.page_size_mb || 0).toFixed(1)}MB</span></div>
                 <div>DOM Nodes: <span className="font-bold">{(analysis.loser.dom_nodes || 0).toLocaleString()}</span></div>
@@ -586,25 +590,25 @@ export default function CompetitiveBenchmarkDashboard() {
             </div>
           </div>
 
-          {/* DEVELOPER ERROR LOG - NEW SECTION */}
+          {/* DEVELOPER ERROR LOG - Enhanced with lighthouse_real_errors */}
           <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border-4 border-blue-400 rounded-lg shadow-lg">
             <div className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white p-4">
               <h3 className="text-xl font-bold text-center flex items-center justify-center gap-2">
                 🔧 DEVELOPER ERROR LOG - {analysis.yourSite.hostname}
               </h3>
-              <p className="text-center text-sm mt-1">Detailed crawlability issues for your development team</p>
+              <p className="text-center text-sm mt-1">Real Lighthouse crawlability issues for your development team</p>
             </div>
             
             <div className="p-6">
-              {/* Railway Error Details - ENHANCED */}
-              {analysis.yourSite.lighthouse_real_errors ? (
+              {/* Priority Issues from lighthouse_real_errors */}
+              {analysis.yourSite.lighthouse_real_errors && (
                 <div className="mb-6">
                   <h4 className="text-lg font-bold text-red-700 mb-4 flex items-center gap-2">
                     🚨 Critical Lighthouse Issues ({analysis.yourSite.lighthouse_real_errors.total_error_count || 0} found)
                   </h4>
                   <div className="space-y-3">
                     {/* PushNode Failures */}
-                    {analysis.yourSite.lighthouse_real_errors.dom_pushnode_failures > 0 && (
+                    {(analysis.yourSite.lighthouse_real_errors.dom_pushnode_failures || 0) > 0 && (
                       <div className="bg-red-50 border-l-4 border-red-500 p-4 rounded-lg">
                         <div className="flex items-start gap-3">
                           <AlertCircle className="text-red-500 mt-0.5" size={20} />
@@ -644,7 +648,7 @@ export default function CompetitiveBenchmarkDashboard() {
                     )}
                     
                     {/* Resource Timeouts */}
-                    {analysis.yourSite.lighthouse_real_errors.resource_timeouts?.length > 0 && (
+                    {(analysis.yourSite.lighthouse_real_errors.resource_timeouts?.length || 0) > 0 && (
                       <div className="bg-red-50 border-l-4 border-red-500 p-4 rounded-lg">
                         <div className="flex items-start gap-3">
                           <AlertCircle className="text-red-500 mt-0.5" size={20} />
@@ -663,44 +667,46 @@ export default function CompetitiveBenchmarkDashboard() {
                       </div>
                     )}
                     
-                    {/* Traditional Crawlability Penalties */}
-                    {analysis.yourSite.crawlability_penalties && analysis.yourSite.crawlability_penalties.length > 0 && (
-                      analysis.yourSite.crawlability_penalties.map((penalty, idx) => (
-                        <div key={idx} className="bg-yellow-50 border-l-4 border-yellow-500 p-4 rounded-lg">
-                          <div className="flex items-start gap-3">
-                            <AlertCircle className="text-yellow-500 mt-0.5" size={20} />
-                            <div>
-                              <div className="font-bold text-yellow-800">{penalty}</div>
-                              <div className="text-sm text-yellow-600 mt-1">
-                                {penalty.includes('DOM nodes') && '→ Consider reducing total HTML elements on the page'}
-                                {penalty.includes('Max children') && '→ Break down complex parent elements into smaller components'}
-                                {penalty.includes('depth') && '→ Flatten DOM structure to reduce nesting levels'}
-                              </div>
+                    {/* Rendering Budget Exceeded */}
+                    {analysis.yourSite.lighthouse_real_errors.rendering_budget_exceeded && (
+                      <div className="bg-yellow-50 border-l-4 border-yellow-500 p-4 rounded-lg">
+                        <div className="flex items-start gap-3">
+                          <AlertCircle className="text-yellow-500 mt-0.5" size={20} />
+                          <div>
+                            <div className="font-bold text-yellow-800">
+                              Rendering Budget Exceeded
+                            </div>
+                            <div className="text-sm text-yellow-600 mt-1">
+                              → Page rendering exceeds optimal performance budgets
+                            </div>
+                            <div className="text-sm text-yellow-600">
+                              → Optimize CSS, JavaScript, and rendering-blocking resources
                             </div>
                           </div>
                         </div>
-                      ))
+                      </div>
                     )}
                   </div>
                 </div>
-              ) : analysis.yourSite.crawlability_penalties && analysis.yourSite.crawlability_penalties.length > 0 ? (
+              )}
+
+              {/* Traditional Crawlability Penalties */}
+              {analysis.yourSite.crawlability_penalties && analysis.yourSite.crawlability_penalties.length > 0 && (
                 <div className="mb-6">
-                  <h4 className="text-lg font-bold text-red-700 mb-4 flex items-center gap-2">
-                    🚨 Railway Lighthouse Issues ({analysis.yourSite.crawlability_penalties.length} found)
+                  <h4 className="text-lg font-bold text-orange-700 mb-4 flex items-center gap-2">
+                    ⚠️ Structure Issues ({analysis.yourSite.crawlability_penalties.length} found)
                   </h4>
                   <div className="space-y-3">
                     {analysis.yourSite.crawlability_penalties.map((penalty, idx) => (
-                      <div key={idx} className="bg-red-50 border-l-4 border-red-500 p-4 rounded-lg">
+                      <div key={idx} className="bg-yellow-50 border-l-4 border-yellow-500 p-4 rounded-lg">
                         <div className="flex items-start gap-3">
-                          <AlertCircle className="text-red-500 mt-0.5" size={20} />
+                          <AlertCircle className="text-yellow-500 mt-0.5" size={20} />
                           <div>
-                            <div className="font-bold text-red-800">{penalty}</div>
-                            <div className="text-sm text-red-600 mt-1">
+                            <div className="font-bold text-yellow-800">{penalty}</div>
+                            <div className="text-sm text-yellow-600 mt-1">
                               {penalty.includes('DOM nodes') && '→ Consider reducing total HTML elements on the page'}
-                              {penalty.includes('Image') && '→ Check image loading, compression, and lazy loading implementation'}
-                              {penalty.includes('budget exceeded') && '→ Optimize resource loading and reduce page weight'}
-                              {penalty.includes('render') && '→ Fix rendering blocking resources and JavaScript execution'}
-                              {penalty.includes('gathering') && '→ Optimize resource delivery and network requests'}
+                              {penalty.includes('Max children') && '→ Break down complex parent elements into smaller components'}
+                              {penalty.includes('depth') && '→ Flatten DOM structure to reduce nesting levels'}
                             </div>
                           </div>
                         </div>
@@ -708,97 +714,128 @@ export default function CompetitiveBenchmarkDashboard() {
                     ))}
                   </div>
                 </div>
-              ) : (
+              )}
+
+              {/* No Issues Found */}
+              {(!analysis.yourSite.lighthouse_real_errors || (
+                !analysis.yourSite.lighthouse_real_errors.dom_pushnode_failures &&
+                !analysis.yourSite.lighthouse_real_errors.image_gathering_failures &&
+                !analysis.yourSite.lighthouse_real_errors.rendering_budget_exceeded &&
+                (!analysis.yourSite.lighthouse_real_errors.resource_timeouts || analysis.yourSite.lighthouse_real_errors.resource_timeouts.length === 0)
+              )) && (!analysis.yourSite.crawlability_penalties || analysis.yourSite.crawlability_penalties.length === 0) && (
                 <div className="mb-6">
                   <h4 className="text-lg font-bold text-green-700 mb-3 flex items-center gap-2">
-                    ✅ Railway Lighthouse Analysis
+                    ✅ Excellent Lighthouse Performance
                   </h4>
                   <div className="bg-green-50 border-l-4 border-green-500 p-4 rounded-lg">
                     <div className="flex items-center gap-3">
                       <CheckCircle className="text-green-500" size={20} />
-                      <span className="text-green-800 font-medium">No critical crawlability penalties detected by Railway</span>
+                      <span className="text-green-800 font-medium">No critical crawlability issues detected!</span>
                     </div>
                   </div>
                 </div>
               )}
 
-              {/* Critical Thresholds Summary */}
+              {/* Critical Metrics Summary */}
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                <div className={`p-4 rounded-lg border-2 ${(analysis.yourSite.max_children || 0) > 60 ? 'bg-red-50 border-red-400' : 'bg-green-50 border-green-400'}`}>
+                <div className={`p-4 rounded-lg border-2 ${(analysis.yourSite.lighthouse_real_errors?.dom_pushnode_failures || 0) > 0 ? 'bg-red-50 border-red-400' : 'bg-green-50 border-green-400'}`}>
                   <div className="text-center">
-                    <div className="text-sm text-gray-600">Max Children</div>
-                    <div className={`text-2xl font-bold ${(analysis.yourSite.max_children || 0) > 60 ? 'text-red-600' : 'text-green-600'}`}>
-                      {analysis.yourSite.max_children || 0}
+                    <div className="text-sm text-gray-600">PushNode Failures</div>
+                    <div className={`text-2xl font-bold ${(analysis.yourSite.lighthouse_real_errors?.dom_pushnode_failures || 0) > 0 ? 'text-red-600' : 'text-green-600'}`}>
+                      {analysis.yourSite.lighthouse_real_errors?.dom_pushnode_failures || 0}
                     </div>
                     <div className="text-xs mt-1">
-                      {(analysis.yourSite.max_children || 0) > 60 ? '🚨 Exceeds Google limit (60)' : '✅ Within Google limit'}
+                      {(analysis.yourSite.lighthouse_real_errors?.dom_pushnode_failures || 0) > 0 ? '🚨 DOM navigation issues' : '✅ Clean DOM access'}
                     </div>
                   </div>
                 </div>
 
-                <div className={`p-4 rounded-lg border-2 ${(analysis.yourSite.dom_nodes || 0) > 1800 ? 'bg-red-50 border-red-400' : (analysis.yourSite.dom_nodes || 0) > 1200 ? 'bg-yellow-50 border-yellow-400' : 'bg-green-50 border-green-400'}`}>
+                <div className={`p-4 rounded-lg border-2 ${analysis.yourSite.lighthouse_real_errors?.image_gathering_failures ? 'bg-red-50 border-red-400' : 'bg-green-50 border-green-400'}`}>
                   <div className="text-center">
-                    <div className="text-sm text-gray-600">DOM Nodes</div>
-                    <div className={`text-2xl font-bold ${(analysis.yourSite.dom_nodes || 0) > 1800 ? 'text-red-600' : (analysis.yourSite.dom_nodes || 0) > 1200 ? 'text-yellow-600' : 'text-green-600'}`}>
-                      {(analysis.yourSite.dom_nodes || 0).toLocaleString()}
+                    <div className="text-sm text-gray-600">Image Budget</div>
+                    <div className={`text-lg font-bold ${analysis.yourSite.lighthouse_real_errors?.image_gathering_failures ? 'text-red-600' : 'text-green-600'}`}>
+                      {analysis.yourSite.lighthouse_real_errors?.image_gathering_failures ? 'EXCEEDED' : 'OK'}
                     </div>
                     <div className="text-xs mt-1">
-                      {(analysis.yourSite.dom_nodes || 0) > 1800 ? '🚨 Critical' : (analysis.yourSite.dom_nodes || 0) > 1200 ? '⚠️ Warning' : '✅ Good'}
+                      {analysis.yourSite.lighthouse_real_errors?.image_gathering_failures || '✅ Within budget limits'}
                     </div>
                   </div>
                 </div>
 
-                <div className={`p-4 rounded-lg border-2 ${(analysis.yourSite.page_size_mb || 0) > 3 ? 'bg-red-50 border-red-400' : (analysis.yourSite.page_size_mb || 0) > 1.5 ? 'bg-yellow-50 border-yellow-400' : 'bg-green-50 border-green-400'}`}>
+                <div className={`p-4 rounded-lg border-2 ${(analysis.yourSite.lighthouse_real_errors?.resource_timeouts?.length || 0) > 0 ? 'bg-red-50 border-red-400' : 'bg-green-50 border-green-400'}`}>
                   <div className="text-center">
-                    <div className="text-sm text-gray-600">Page Size</div>
-                    <div className={`text-2xl font-bold ${(analysis.yourSite.page_size_mb || 0) > 3 ? 'text-red-600' : (analysis.yourSite.page_size_mb || 0) > 1.5 ? 'text-yellow-600' : 'text-green-600'}`}>
-                      {(analysis.yourSite.page_size_mb || 0).toFixed(1)}MB
+                    <div className="text-sm text-gray-600">Resource Timeouts</div>
+                    <div className={`text-2xl font-bold ${(analysis.yourSite.lighthouse_real_errors?.resource_timeouts?.length || 0) > 0 ? 'text-red-600' : 'text-green-600'}`}>
+                      {analysis.yourSite.lighthouse_real_errors?.resource_timeouts?.length || 0}
                     </div>
                     <div className="text-xs mt-1">
-                      {(analysis.yourSite.page_size_mb || 0) > 3 ? '🚨 Heavy' : (analysis.yourSite.page_size_mb || 0) > 1.5 ? '⚠️ Moderate' : '✅ Light'}
+                      {(analysis.yourSite.lighthouse_real_errors?.resource_timeouts?.length || 0) > 0 ? '🚨 Loading timeouts' : '✅ Fast loading'}
                     </div>
                   </div>
                 </div>
 
-                <div className={`p-4 rounded-lg border-2 ${(analysis.yourSite.dom_errors || 0) > 10 ? 'bg-red-50 border-red-400' : (analysis.yourSite.dom_errors || 0) > 5 ? 'bg-yellow-50 border-yellow-400' : 'bg-green-50 border-green-400'}`}>
+                <div className={`p-4 rounded-lg border-2 ${analysis.yourSite.lighthouse_real_errors?.rendering_budget_exceeded ? 'bg-red-50 border-red-400' : 'bg-green-50 border-green-400'}`}>
                   <div className="text-center">
-                    <div className="text-sm text-gray-600">DOM Errors</div>
-                    <div className={`text-2xl font-bold ${(analysis.yourSite.dom_errors || 0) > 10 ? 'text-red-600' : (analysis.yourSite.dom_errors || 0) > 5 ? 'text-yellow-600' : 'text-green-600'}`}>
-                      {analysis.yourSite.dom_errors || 0}
+                    <div className="text-sm text-gray-600">Rendering Budget</div>
+                    <div className={`text-lg font-bold ${analysis.yourSite.lighthouse_real_errors?.rendering_budget_exceeded ? 'text-red-600' : 'text-green-600'}`}>
+                      {analysis.yourSite.lighthouse_real_errors?.rendering_budget_exceeded ? 'EXCEEDED' : 'OK'}
                     </div>
                     <div className="text-xs mt-1">
-                      {(analysis.yourSite.dom_errors || 0) > 10 ? '🚨 Critical' : (analysis.yourSite.dom_errors || 0) > 5 ? '⚠️ Warning' : '✅ Good'}
+                      {analysis.yourSite.lighthouse_real_errors?.rendering_budget_exceeded ? '🚨 Optimize rendering' : '✅ Efficient rendering'}
                     </div>
                   </div>
                 </div>
               </div>
 
-              {/* Developer Actions */}
+              {/* Developer Actions - Updated with lighthouse_real_errors */}
               <div className="mt-6 bg-blue-50 border border-blue-200 rounded-lg p-4">
-                <h4 className="font-bold text-blue-800 mb-3">💡 Quick Developer Actions:</h4>
+                <h4 className="font-bold text-blue-800 mb-3">💡 Priority Developer Actions:</h4>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
-                  {(analysis.yourSite.max_children || 0) > 60 && (
+                  {(analysis.yourSite.lighthouse_real_errors?.dom_pushnode_failures || 0) > 0 && (
                     <div className="flex items-start gap-2">
                       <div className="text-red-500 font-bold">🔧</div>
+                      <div>Fix {analysis.yourSite.lighthouse_real_errors.dom_pushnode_failures} DOM navigation issues - improve element accessibility</div>
+                    </div>
+                  )}
+                  {analysis.yourSite.lighthouse_real_errors?.image_gathering_failures && (
+                    <div className="flex items-start gap-2">
+                      <div className="text-red-500 font-bold">🔧</div>
+                      <div>Optimize image delivery - {analysis.yourSite.lighthouse_real_errors.image_gathering_failures}</div>
+                    </div>
+                  )}
+                  {(analysis.yourSite.lighthouse_real_errors?.resource_timeouts?.length || 0) > 0 && (
+                    <div className="flex items-start gap-2">
+                      <div className="text-red-500 font-bold">🔧</div>
+                      <div>Fix {analysis.yourSite.lighthouse_real_errors.resource_timeouts.length} resource loading timeouts</div>
+                    </div>
+                  )}
+                  {analysis.yourSite.lighthouse_real_errors?.rendering_budget_exceeded && (
+                    <div className="flex items-start gap-2">
+                      <div className="text-red-500 font-bold">🔧</div>
+                      <div>Optimize rendering performance - reduce rendering budget usage</div>
+                    </div>
+                  )}
+                  {(analysis.yourSite.max_children || 0) > 60 && (
+                    <div className="flex items-start gap-2">
+                      <div className="text-orange-500 font-bold">🔧</div>
                       <div>Reduce parent elements with 60+ children (current: {analysis.yourSite.max_children})</div>
                     </div>
                   )}
                   {(analysis.yourSite.dom_nodes || 0) > 1800 && (
                     <div className="flex items-start gap-2">
-                      <div className="text-red-500 font-bold">🔧</div>
+                      <div className="text-orange-500 font-bold">🔧</div>
                       <div>Optimize DOM structure - consider lazy loading for {(analysis.yourSite.dom_nodes || 0) - 1800}+ excess nodes</div>
                     </div>
                   )}
-                  {(analysis.yourSite.page_size_mb || 0) > 3 && (
-                    <div className="flex items-start gap-2">
-                      <div className="text-red-500 font-bold">🔧</div>
-                      <div>Compress resources - page is {((analysis.yourSite.page_size_mb || 0) - 3).toFixed(1)}MB over recommended limit</div>
-                    </div>
-                  )}
-                  {(analysis.yourSite.dom_errors || 0) > 5 && (
-                    <div className="flex items-start gap-2">
-                      <div className="text-red-500 font-bold">🔧</div>
-                      <div>Review Railway penalties above - fix {analysis.yourSite.dom_errors} critical issues</div>
+                  {(!analysis.yourSite.lighthouse_real_errors || (
+                    !analysis.yourSite.lighthouse_real_errors.dom_pushnode_failures &&
+                    !analysis.yourSite.lighthouse_real_errors.image_gathering_failures &&
+                    !analysis.yourSite.lighthouse_real_errors.rendering_budget_exceeded &&
+                    (!analysis.yourSite.lighthouse_real_errors.resource_timeouts || analysis.yourSite.lighthouse_real_errors.resource_timeouts.length === 0)
+                  )) && (analysis.yourSite.max_children || 0) <= 60 && (analysis.yourSite.dom_nodes || 0) <= 1800 && (
+                    <div className="flex items-start gap-2 col-span-2">
+                      <div className="text-green-500 font-bold">✅</div>
+                      <div>Excellent! No critical crawlability issues detected.</div>
                     </div>
                   )}
                 </div>
@@ -806,11 +843,11 @@ export default function CompetitiveBenchmarkDashboard() {
             </div>
           </div>
 
-          {/* Detailed Comparison Table - UPDATED colors */}
+          {/* Detailed Comparison Table - WITH NEW COLUMNS */}
           <div className="bg-white rounded-lg shadow-sm border overflow-hidden">
             <div className="bg-gradient-to-r from-blue-600 to-purple-600 text-white p-4">
               <h3 className="text-xl font-bold text-center">📊 DETAILED BENCHMARK COMPARISON</h3>
-              <p className="text-center text-sm mt-1">Based on Google's crawlability thresholds</p>
+              <p className="text-center text-sm mt-1">Based on Google's crawlability thresholds + Real Lighthouse errors</p>
             </div>
             
             <div className="overflow-x-auto">
@@ -818,6 +855,9 @@ export default function CompetitiveBenchmarkDashboard() {
                 <thead className="bg-gray-100">
                   <tr>
                     <th className="px-4 py-3 text-left font-bold">Website</th>
+                    <th className="px-4 py-3 text-center font-bold">🚨 PushNode<br/>Failures</th>
+                    <th className="px-4 py-3 text-center font-bold">🖼️ Image<br/>Budget</th>
+                    <th className="px-4 py-3 text-center font-bold">⏱️ Resource<br/>Timeouts</th>
                     <th className="px-4 py-3 text-center font-bold">🚨 DOM<br/>Errors</th>
                     <th className="px-4 py-3 text-center font-bold">👶 Max<br/>Children</th>
                     <th className="px-4 py-3 text-center font-bold">📦 Page<br/>Size (MB)</th>
@@ -848,6 +888,46 @@ export default function CompetitiveBenchmarkDashboard() {
                           </div>
                         </td>
                         
+                        {/* NEW: PushNode Failures */}
+                        <td className="px-4 py-4 text-center">
+                          <div className={`text-2xl font-bold ${
+                            (site.lighthouse_real_errors?.dom_pushnode_failures || 0) === 0 ? 'text-green-600' :
+                            (site.lighthouse_real_errors?.dom_pushnode_failures || 0) <= 10 ? 'text-yellow-600' : 'text-red-600'
+                          }`}>
+                            {site.lighthouse_real_errors?.dom_pushnode_failures || 0}
+                          </div>
+                          <div className="text-xs text-gray-500">
+                            {(site.lighthouse_real_errors?.dom_pushnode_failures || 0) === 0 ? 'Perfect' :
+                             (site.lighthouse_real_errors?.dom_pushnode_failures || 0) <= 10 ? 'Warning' : 'Critical'}
+                          </div>
+                        </td>
+                        
+                        {/* NEW: Image Budget */}
+                        <td className="px-4 py-4 text-center">
+                          <div className={`text-lg font-bold ${
+                            !site.lighthouse_real_errors?.image_gathering_failures ? 'text-green-600' : 'text-red-600'
+                          }`}>
+                            {site.lighthouse_real_errors?.image_gathering_failures ? 'EXCEEDED' : 'OK'}
+                          </div>
+                          <div className="text-xs text-gray-500">
+                            {site.lighthouse_real_errors?.image_gathering_failures ? 'Budget exceeded' : 'Within budget'}
+                          </div>
+                        </td>
+                        
+                        {/* NEW: Resource Timeouts */}
+                        <td className="px-4 py-4 text-center">
+                          <div className={`text-2xl font-bold ${
+                            (site.lighthouse_real_errors?.resource_timeouts?.length || 0) === 0 ? 'text-green-600' :
+                            (site.lighthouse_real_errors?.resource_timeouts?.length || 0) <= 3 ? 'text-yellow-600' : 'text-red-600'
+                          }`}>
+                            {site.lighthouse_real_errors?.resource_timeouts?.length || 0}
+                          </div>
+                          <div className="text-xs text-gray-500">
+                            {(site.lighthouse_real_errors?.resource_timeouts?.length || 0) === 0 ? 'None' : 'Timeouts'}
+                          </div>
+                        </td>
+                        
+                        {/* EXISTING: DOM Errors */}
                         <td className="px-4 py-4 text-center">
                           <div className={`text-2xl font-bold ${getStatusColor(site.dom_errors || 0, 'dom_errors')}`}>
                             {site.dom_errors || 0}
@@ -857,6 +937,7 @@ export default function CompetitiveBenchmarkDashboard() {
                           </div>
                         </td>
                         
+                        {/* EXISTING: Max Children */}
                         <td className="px-4 py-4 text-center">
                           <div className={`text-2xl font-bold ${getStatusColor(site.max_children || 0, 'max_children')}`}>
                             {site.max_children || 0}
@@ -866,6 +947,7 @@ export default function CompetitiveBenchmarkDashboard() {
                           </div>
                         </td>
                         
+                        {/* EXISTING: Page Size */}
                         <td className="px-4 py-4 text-center">
                           <div className={`text-2xl font-bold ${getStatusColor(site.page_size_mb || 0, 'page_size')}`}>
                             {(site.page_size_mb || 0).toFixed(1)}
@@ -875,6 +957,7 @@ export default function CompetitiveBenchmarkDashboard() {
                           </div>
                         </td>
                         
+                        {/* EXISTING: DOM Nodes */}
                         <td className="px-4 py-4 text-center">
                           <div className={`text-xl font-bold ${getStatusColor(site.dom_nodes || 0, 'dom_nodes')}`}>
                             {site.dom_nodes === 0 ? 'N/A' : (site.dom_nodes || 0).toLocaleString()}
@@ -884,6 +967,7 @@ export default function CompetitiveBenchmarkDashboard() {
                           </div>
                         </td>
                         
+                        {/* EXISTING: DOM Depth */}
                         <td className="px-4 py-4 text-center">
                           <div className={`text-xl font-bold ${getStatusColor(site.dom_depth || 0, 'dom_depth')}`}>
                             {site.dom_depth === 0 ? 'N/A' : site.dom_depth || 0}
@@ -893,6 +977,7 @@ export default function CompetitiveBenchmarkDashboard() {
                           </div>
                         </td>
                         
+                        {/* EXISTING: Mobile Performance */}
                         <td className="px-4 py-4 text-center">
                           <div className={`text-xl font-bold ${getStatusColor(site.performance_mobile || 0, 'performance')}`}>
                             {site.performance_mobile || 0}
@@ -902,6 +987,7 @@ export default function CompetitiveBenchmarkDashboard() {
                           </div>
                         </td>
                         
+                        {/* EXISTING: Desktop Performance */}
                         <td className="px-4 py-4 text-center">
                           <div className={`text-xl font-bold ${getStatusColor(site.performance_desktop || 0, 'performance')}`}>
                             {site.performance_desktop || 0}
@@ -911,6 +997,7 @@ export default function CompetitiveBenchmarkDashboard() {
                           </div>
                         </td>
                         
+                        {/* EXISTING: Benchmark Score */}
                         <td className="px-4 py-4 text-center">
                           <div className={`text-2xl font-bold ${
                             site.benchmark_score >= 90 ? 'text-green-600' :
@@ -921,6 +1008,7 @@ export default function CompetitiveBenchmarkDashboard() {
                           <div className="text-xs text-gray-500">/100</div>
                         </td>
                         
+                        {/* EXISTING: Data Source */}
                         <td className="px-4 py-4 text-center">
                           <div className={`text-xs px-2 py-1 rounded font-bold ${
                             site.analysis_method === 'HYBRID' ? 'bg-green-100 text-green-700' :
@@ -970,22 +1058,30 @@ export default function CompetitiveBenchmarkDashboard() {
               <div className="bg-white p-4 rounded-lg border shadow-sm">
                 <h4 className="font-bold text-green-700 mb-3">🎯 Biggest Opportunity</h4>
                 <div className="space-y-2 text-sm">
-                  {(analysis.yourSite.dom_errors || 0) > 10 && (
+                  {(analysis.yourSite.lighthouse_real_errors?.dom_pushnode_failures || 0) > 0 && (
                     <div className="p-2 bg-red-50 text-red-700 rounded">
-                      ⚠️ Fix {analysis.yourSite.dom_errors} DOM errors
+                      🚨 Fix {analysis.yourSite.lighthouse_real_errors.dom_pushnode_failures} PushNode failures
+                    </div>
+                  )}
+                  {analysis.yourSite.lighthouse_real_errors?.image_gathering_failures && (
+                    <div className="p-2 bg-red-50 text-red-700 rounded">
+                      🖼️ Fix image budget exceeded
+                    </div>
+                  )}
+                  {(analysis.yourSite.lighthouse_real_errors?.resource_timeouts?.length || 0) > 0 && (
+                    <div className="p-2 bg-red-50 text-red-700 rounded">
+                      ⏱️ Fix {analysis.yourSite.lighthouse_real_errors.resource_timeouts.length} resource timeouts
                     </div>
                   )}
                   {(analysis.yourSite.max_children || 0) > 60 && (
                     <div className="p-2 bg-red-50 text-red-700 rounded">
-                      🚨 Reduce max children from {analysis.yourSite.max_children} to under 60
+                      👶 Reduce max children from {analysis.yourSite.max_children} to under 60
                     </div>
                   )}
-                  {(analysis.yourSite.page_size_mb || 0) > 3 && (
-                    <div className="p-2 bg-orange-50 text-orange-700 rounded">
-                      📦 Reduce page size from {(analysis.yourSite.page_size_mb || 0).toFixed(1)}MB to under 3MB
-                    </div>
-                  )}
-                  {(analysis.yourSite.dom_errors || 0) <= 10 && (analysis.yourSite.max_children || 0) <= 60 && (analysis.yourSite.page_size_mb || 0) <= 3 && (
+                  {(analysis.yourSite.lighthouse_real_errors?.dom_pushnode_failures || 0) === 0 && 
+                   !analysis.yourSite.lighthouse_real_errors?.image_gathering_failures && 
+                   (analysis.yourSite.lighthouse_real_errors?.resource_timeouts?.length || 0) === 0 && 
+                   (analysis.yourSite.max_children || 0) <= 60 && (
                     <div className="p-2 bg-green-50 text-green-700 rounded">
                       ✅ Your site meets Google's thresholds!
                     </div>
@@ -1047,7 +1143,11 @@ export default function CompetitiveBenchmarkDashboard() {
                 {result.status === 'success' && (
                   <div className="grid grid-cols-3 md:grid-cols-6 gap-2 mt-3 text-sm">
                     <div>
-                      <div className="text-gray-600">DOM Errors</div>
+                      <div className="text-gray-600">PushNode</div>
+                      <div className="font-bold">{result.lighthouse_real_errors?.dom_pushnode_failures || 0}</div>
+                    </div>
+                    <div>
+                      <div className="text-gray-600">DOM Errors</div>  
                       <div className="font-bold">{result.dom_errors || 0}</div>
                     </div>
                     <div>
@@ -1057,10 +1157,6 @@ export default function CompetitiveBenchmarkDashboard() {
                     <div>
                       <div className="text-gray-600">Max Children</div>
                       <div className="font-bold">{result.max_children || 'N/A'}</div>
-                    </div>
-                    <div>
-                      <div className="text-gray-600">DOM Nodes</div>
-                      <div className="font-bold">{result.dom_nodes || 'N/A'}</div>
                     </div>
                     <div>
                       <div className="text-gray-600">Mobile Perf</div>
@@ -1086,12 +1182,15 @@ export default function CompetitiveBenchmarkDashboard() {
 
       {/* Footer */}
       <div className="bg-white rounded-lg shadow-sm border p-6 mt-8">
-        <h3 className="text-xl font-bold text-gray-900 mb-4">🎯 Google Threshold-Based Benchmarking</h3>
+        <h3 className="text-xl font-bold text-gray-900 mb-4">🎯 Enhanced Google Threshold-Based Benchmarking</h3>
         <p className="mb-4 text-gray-700">
-          This dashboard uses Google's official crawlability thresholds to score and rank websites. 
+          This dashboard uses Google's official crawlability thresholds PLUS real Lighthouse errors to score and rank websites. 
           Combines real DOM data from Railway Lighthouse CLI with performance scores from PageSpeed API.
         </p>
         <div className="text-sm text-gray-600 space-y-2">
+          <div><strong>🚨 PushNode Failures:</strong> 0=Perfect, 1-10=Warning, 10+=Critical (DOM navigation issues)</div>
+          <div><strong>🖼️ Image Budget:</strong> OK=Within limits, EXCEEDED=Too many images processed</div>
+          <div><strong>⏱️ Resource Timeouts:</strong> 0=Perfect, 1-3=Warning, 3+=Critical (Loading issues)</div>
           <div><strong>🚨 DOM Errors:</strong> 0=Perfect, 1-5=Good, 6-10=Warning, 11-30=Critical, 30+=Severe</div>
           <div><strong>👶 Max Children:</strong> ≤40=Good, 41-60=Warning, 60+=Google Limit Exceeded</div>
           <div><strong>📦 Page Size:</strong> ≤1.5MB=Light, 1.6-3MB=Moderate, 3MB+=Heavy</div>
