@@ -84,6 +84,9 @@ export default async function handler(req, res) {
           // 🔧 FIX: Map crawlability_risk to crawl_impact
           crawl_impact: rawData.crawlability_risk || 'UNKNOWN',
           
+          // 🔥 CRITICAL FIX: Map lighthouse_real_errors from Railway
+          lighthouse_real_errors: rawData.lighthouse_real_errors || null,
+          
           // Additional fields for compatibility
           analysis_timestamp: rawData.analysis_timestamp,
           url: fullUrl
@@ -97,8 +100,22 @@ export default async function handler(req, res) {
           score: railwayDOMData.crawlability_score,
           risk: railwayDOMData.crawlability_risk,
           errors: railwayDOMData.dom_errors, // ← Fixed mapping!
-          penalties: railwayDOMData.crawlability_penalties?.length || 0
+          penalties: railwayDOMData.crawlability_penalties?.length || 0,
+          // 🔥 NEW: Log the critical lighthouse_real_errors
+          lighthouse_real_errors: railwayDOMData.lighthouse_real_errors
         });
+        
+        // 🔥 CRITICAL: Log specific lighthouse error details
+        if (railwayDOMData.lighthouse_real_errors) {
+          console.log('🚨 Lighthouse Real Errors detected:', {
+            pushnode_failures: railwayDOMData.lighthouse_real_errors.dom_pushnode_failures,
+            image_failures: railwayDOMData.lighthouse_real_errors.image_gathering_failures,
+            resource_timeouts: railwayDOMData.lighthouse_real_errors.resource_timeouts?.length,
+            total_errors: railwayDOMData.lighthouse_real_errors.total_error_count
+          });
+        } else {
+          console.log('ℹ️ No lighthouse_real_errors in Railway response');
+        }
       } else {
         console.log('⚠️ Railway analysis failed:', railwayResult.error || 'No domData in response');
         domDataSource = 'RAILWAY_NO_DATA';
@@ -126,6 +143,7 @@ export default async function handler(req, res) {
       console.log('✅ Returning mapped Railway DOM data to frontend');
       console.log('🔧 Mapped dom_errors:', railwayDOMData.dom_errors);
       console.log('🔧 Mapped crawl_impact:', railwayDOMData.crawl_impact);
+      console.log('🔥 Mapped lighthouse_real_errors:', !!railwayDOMData.lighthouse_real_errors);
       
       res.status(200).json({
         success: true,
