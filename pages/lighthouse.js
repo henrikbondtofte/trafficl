@@ -384,9 +384,12 @@ export default function CompetitiveBenchmarkDashboard() {
       // Sort by benchmark score
       const rankedResults = [...scoredResults].sort((a, b) => b.benchmark_score - a.benchmark_score);
       
+      // Find your site in the scored results (with benchmark_score)
+      const yourSiteWithScore = scoredResults.find(r => r.isYourSite);
+      
       setAnalysis({
-        yourSite: yourSiteResult,
-        competitors: competitorResults,
+        yourSite: yourSiteWithScore,
+        competitors: competitorResults.map(comp => scoredResults.find(scored => scored.url === comp.url) || comp),
         ranked: rankedResults,
         winner: rankedResults[0],
         loser: rankedResults[rankedResults.length - 1],
