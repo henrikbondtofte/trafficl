@@ -107,7 +107,7 @@ export default function Home() {
                 </div>
               </div>
               
-              <Link href="/lighthouse-dom-analyzer">
+              <Link href="/lighthouse">
                 <button className="w-full bg-purple-600 text-white py-3 px-4 rounded-lg hover:bg-purple-700 transition-colors flex items-center justify-center">
                   Launch DOM Analyzer
                   <ArrowRight className="w-4 h-4 ml-2" />
