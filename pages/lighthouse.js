@@ -31,6 +31,11 @@ export default function CompetitiveBenchmarkDashboard() {
       const mobileResponse = await fetch(
         `https://www.googleapis.com/pagespeedonline/v5/runPagespeed?url=${encodeURIComponent(fullUrl)}&strategy=mobile&key=${apiKey.trim()}&category=performance&category=seo&category=accessibility&category=best-practices`
       );
+      
+      if (!mobileResponse.ok) {
+        throw new Error(`PageSpeed API failed with status ${mobileResponse.status}`);
+      }
+      
       const mobileData = await mobileResponse.json();
       
       if (mobileData.error) {
@@ -42,6 +47,11 @@ export default function CompetitiveBenchmarkDashboard() {
       const desktopResponse = await fetch(
         `https://www.googleapis.com/pagespeedonline/v5/runPagespeed?url=${encodeURIComponent(fullUrl)}&strategy=desktop&key=${apiKey.trim()}&category=performance&category=seo&category=accessibility&category=best-practices`
       );
+      
+      if (!desktopResponse.ok) {
+        throw new Error(`PageSpeed API failed with status ${desktopResponse.status}`);
+      }
+      
       const desktopData = await desktopResponse.json();
       
       if (desktopData.error) {
@@ -68,8 +78,6 @@ export default function CompetitiveBenchmarkDashboard() {
         if (domResult.success) {
           railwayDOMData = domResult.domData;
           console.log('✅ Railway DOM data received:', railwayDOMData);
-          console.log('🔧 Railway DOM errors (mapped):', railwayDOMData.dom_errors);
-          console.log('🔧 Railway crawl impact (mapped):', railwayDOMData.crawl_impact);
           console.log('🔥 Railway lighthouse_real_errors:', railwayDOMData.lighthouse_real_errors);
         } else {
           console.log('⚠️ Railway failed, using PageSpeed API only');
@@ -101,7 +109,7 @@ export default function CompetitiveBenchmarkDashboard() {
         max_children: railwayDOMData ? railwayDOMData.max_children : 0,
         dom_errors: railwayDOMData ? railwayDOMData.dom_errors : pagespeedData.dom_errors,
         
-        // NEW: Lighthouse Real Errors from Railway
+        // NEW: Lighthouse Real Errors from Railway - FIXED PATH
         lighthouse_real_errors: railwayDOMData ? railwayDOMData.lighthouse_real_errors : null,
         
         // Page size from PageSpeed API
@@ -124,7 +132,7 @@ export default function CompetitiveBenchmarkDashboard() {
       console.error('🚨 Hybrid analysis error:', error);
       return {
         url: fullUrl,
-        hostname: new URL(fullUrl).hostname,
+        hostname: fullUrl ? new URL(fullUrl).hostname : 'unknown',
         error: String(error.message || 'Unknown error'),
         status: 'error'
       };
@@ -358,24 +366,25 @@ export default function CompetitiveBenchmarkDashboard() {
           }
         } catch (error) {
           console.error(`Analysis error for ${url}:`, error);
-          analysisResults.push({ 
+          const errorResult = {
             url: ensureProtocol(url), 
-            hostname: new URL(ensureProtocol(url)).hostname,
+            hostname: url ? new URL(ensureProtocol(url)).hostname : 'unknown',
             error: String(error.message), 
             status: 'error',
             isYourSite: i === 0
-          });
+          };
+          analysisResults.push(errorResult);
         }
       }
     }
     
     // Generate competitive analysis
-    const validResults = analysisResults.filter(r => r.status === 'success');
+    const validResults = analysisResults.filter(r => r.status === 'success' && r.hostname);
     if (validResults.length >= 2) {
       const yourSiteResult = validResults.find(r => r.isYourSite);
       const competitorResults = validResults.filter(r => !r.isYourSite);
       
-      // Calculate benchmark scores
+      // Calculate benchmark scores - only for valid results
       const scoredResults = validResults.map(site => ({
         ...site,
         benchmark_score: calculateBenchmarkScore(site)
@@ -387,14 +396,16 @@ export default function CompetitiveBenchmarkDashboard() {
       // Find your site in the scored results (with benchmark_score)
       const yourSiteWithScore = scoredResults.find(r => r.isYourSite);
       
-      setAnalysis({
-        yourSite: yourSiteWithScore,
-        competitors: competitorResults.map(comp => scoredResults.find(scored => scored.url === comp.url) || comp),
-        ranked: rankedResults,
-        winner: rankedResults[0],
-        loser: rankedResults[rankedResults.length - 1],
-        yourRank: rankedResults.findIndex(r => r.isYourSite) + 1
-      });
+      if (yourSiteWithScore) {
+        setAnalysis({
+          yourSite: yourSiteWithScore,
+          competitors: competitorResults.map(comp => scoredResults.find(scored => scored.url === comp.url) || comp),
+          ranked: rankedResults,
+          winner: rankedResults[0],
+          loser: rankedResults[rankedResults.length - 1],
+          yourRank: rankedResults.findIndex(r => r.isYourSite) + 1
+        });
+      }
     }
     
     setIsAnalyzing(false);
